@@ -1,0 +1,531 @@
+\documentclass[12pt,a4paper, german,oneside, headinclude, headsepline,plainheadsepline,BCOR20mm, DIV18,parskip=half, openright, numbers=noenddot, captions=tableheading,version=first,listof=totoc,version=first]{scrbook}
+
+\hfuzz=20pt
+\vfuzz=20pt
+
+%--------------- Packages ----------------
+\usepackage[ngerman]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[centertags]{amsmath} 
+\usepackage{tabularx}
+\usepackage{graphicx} 
+\usepackage{float} 
+\usepackage{setspace} 
+\usepackage{scrlayer-scrpage}
+\usepackage{scrhack}
+\usepackage{makeidx}
+\usepackage[usenames,dvipsnames,svgnames,table]{xcolor}
+\usepackage[absolute]{textpos}
+\usepackage{subfigure}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage{trfsigns}
+\usepackage{siunitx}
+\usepackage[abs]{overpic}
+\usepackage[colorlinks = false,pdfpagelabels = true,pdfstartview = FitH,bookmarksopen = true,bookmarksnumbered = true,linkcolor = black,plainpages = false,hypertexnames = false,citecolor = black] {hyperref}
+\usepackage{pgfplots}
+\usepackage[framed,numbered,autolinebreaks,useliterate]{mcode}
+\usepackage{xcolor}
+\usepackage[
+    left = \flqq{},% 
+    right = \frqq{},% 
+    leftsub = \flq{},% 
+    rightsub = \frq{} %
+]{dirtytalk}
+\lstset{breaklines=true}
+
+
+\pagestyle{scrheadings}
+\renewcommand{\headfont}{\normalfont\sffamily} 
+\renewcommand{\pnumfont}{\normalfont\sffamily} 
+\ohead[\pagemark]{\pagemark} 
+\ifoot[]{}
+\ofoot[]{}
+\setlength{\headheight}{1.5\baselineskip}
+\onehalfspacing
+
+%----------------------- Beginn des Dokuments -----------------------
+\begin{document}
+\pagenumbering{Roman}
+\thispagestyle{empty}
+\setcounter{page}{-1}
+
+\includegraphics*[width = \textwidth]{Logos/Logo.pdf}
+
+\vspace{25mm}
+
+{\centering
+
+\LARGE\textbf{{Anleitung}}\\
+\vspace{1em}
+\large{Für die Multilayout-ESP-Wordclock} \\
+
+\par}
+
+
+\newpage
+\thispagestyle{empty}
+
+\cleardoublepage
+
+\cleardoublestandardpage
+
+\begin{spacing}{1.15}		
+\pdfbookmark[1]{Inhaltsverzeichnis}{toc}		
+\tableofcontents 		
+
+\end{spacing}
+
+\cleardoublestandardpage
+
+\mainmatter							
+
+\chapter{Einleitung}
+
+Diese Anleitung soll helfen, eine mehrsprachige Wortuhr zu bauen, die auf einem ESP8266-, ESP8285-, ESP32- oder ESP32-C3-Mikrocontroller und einer programmierbaren LED-Leiste (WS2812 oder SK6812) basiert. Dieses Projekt wurde über mehrere Jahre von einer Vielzahl von Mitwirkenden auf GitHub entwickelt und frei zur Verfügung gestellt.\\
+Eine Wortuhr (auch als Wordclock bekannt) ist ein schönes DIY-Projekt für Anfänger, das Technologie und Design kombiniert, um eine funktionale und ästhetisch ansprechende Uhr zu schaffen. Egal, ob Sie Anfänger oder erfahrener Bastler sind, dieses Projekt ist eine großartige Gelegenheit, Ihre Fähigkeiten unter Beweis zu stellen und etwas wirklich Besonderes zu schaffen. Die Gestaltungsmöglichkeiten liegen vor allem im Rahmen und in der Wahl der Oberfläche der Uhr.
+
+\section{Hauptfunktionen}
+
+Die bereitgestellte Software zum Betreiben der Wortuhr hat mehrere Funktionen:
+
+\begin{itemize}
+    \item Mehrsprachig (Deutsch, Englisch, Niederländisch, Italienisch, Spanisch, Ungarisch, Französisch, Rumänisch, Schweizer Deutsch, Russisch, Schwedisch, Bengalisch und Türkisch)
+    \item Unterstützung für mehrere Matrizengrößen und LED-Abstände
+    \item Farbwechsel der Anzeigefarbe möglich (RGB oder RGBW)
+    \item Farbmodi: einfarbig, Farbverlauf mit zweiter Farbe oder wortweise zufällige Farben
+    \item Digitale Uhranzeige
+    \item Laufschrift, kurzer statischer Text und Symbol-Anzeige
+    \item Regenbogenfarbwechsel
+    \item Feuer-Animation
+    \item Einstellbare Übergangsanimationen zwischen Anzeigewechseln
+    \item Geburtstags- und Silvester-Animationen
+    \item Umgebungslicht (als Sekundenzeiger ausgeführt oder Ambientlight) mit frei einstellbarer LED-Anzahl
+    \item Minuten- und Sekundenanzeige im Rahmen oder in Worten
+    \item Automatische Helligkeitsregelung (optional über Sensor)
+    \item Offlinebetrieb (optional über entsprechende RTC)
+    \item Zeitserver, Zeitzone und manuelle Uhrzeit im Web-Frontend einstellbar
+    \item Konfigurierbare Hardware- und I2C-Pins
+    \item Konfigurierbares Startverhalten
+    \item Auswahl an dialektspezifischen Anzeigen
+    \item MQTT- und Home-Assistant-Einbindung mit Autodiscovery
+    \item Wetterdaten über OpenWeatherMap bei passenden Frontplatten
+    \item Optionaler Passwortschutz für das Web-Frontend
+\end{itemize}
+
+\section{Uhrenvarianten}
+
+Die Firmware unterstützt verschiedene Frontplatten und Matrixgrößen. Die passende Variante wird später im Web-Frontend unter \say{Anzeigeoptionen} im Bereich \say{Front} ausgewählt. Wichtig ist, dass die eingestellte Matrix zur tatsächlich gebauten Buchstabenmaske und zur Anordnung der LEDs passt.
+
+\begin{itemize}
+    \item Klassische deutsche Layouts mit 10 \(\times\) 11, 11 \(\times\) 11, 13 \(\times\) 13, 16 \(\times\) 8 oder 16 \(\times\) 18 LEDs
+    \item Kompakte Varianten mit 8 \(\times\) 8 LEDs, teilweise für Viertelstunden-Anzeige
+    \item Internationale Layouts, unter anderem Englisch, Niederländisch, Spanisch, Italienisch, Ungarisch, Französisch, Rumänisch, Schweizer Deutsch, Russisch, Schwedisch, Bengalisch und Türkisch
+    \item Dialekt- und Sondervarianten wie Bayerisch, Schwäbisch, Züridütsch, Nero, mrrioes oder Wetter-Layout
+    \item Bauarten mit einer LED pro Buchstabe, jeder zweiten LED pro Buchstabe oder zwei, drei bzw. vier LEDs pro Buchstabe
+\end{itemize}
+
+Zusätzlich können im Web-Frontend die Minutenzählrichtung, horizontale oder vertikale Spiegelung, gedrehte Layouts, zusätzliche LEDs pro Reihe, mäanderförmig verlegte LED-Streifen und die Bauart der LED-Matrix eingestellt werden. Diese Optionen sind hilfreich, wenn die LED-Streifen anders herum eingebaut wurden, die Frontplatte gespiegelt gefertigt ist oder mehrere physische LEDs einen Buchstaben ausleuchten. Änderungen an Matrixgröße und Bauart werden im EEPROM gespeichert und erst nach einem Neustart der Uhr vollständig übernommen.
+
+    \begin{figure} [H]
+        \centering
+        \includegraphics[width=0.9\linewidth]{Logos/WebFrontendFrontBuildType.png}
+        \caption{Front- und Bauart-Konfiguration im Web-Frontend}
+        \label{abb.WebFrontendFrontBuildType}
+    \end{figure}
+
+\section{Voraussetzungen}
+
+Die folgende Hardware/Software wird für dieses Projekt benötigt:
+
+\subsubsection{Hardware}
+
+\begin{itemize}
+    \item NodeMCU oder vergleichbares Board mit ESP8266-, ESP8285-, ESP32- oder ESP32-C3-Chip
+    \item WS2812B RGB-LED-Streifen oder SK6812 RGBW-Streifen
+    \item Stromversorgung 5 V / 2 A
+    \item Optional: LDR, 10 KOhm-Widerstand
+    \item Optional: BH1750 (digitaler Helligkeitssensor, anstatt LDR)
+    \item Optional: DS3231 (Echtzeituhr, für den Offline-Betrieb)
+\end{itemize}
+
+\subsubsection{Software}
+
+\begin{itemize}
+    \item PlatformIO Core oder IDE (bspw. Visual Studio Code)
+    \item Node.js
+    \item Git
+\end{itemize}
+
+\chapter{Installation der Wortuhr Software}
+
+\section{Erstmaliges Aufspielen einer Binary}
+Für das erstmalige Aufspielen stehen auf der GitHub-Seite rechts unter \say{Releases} fertige Versionen der Software zur Verfügung. Programme zum Aufspielen der Binary findet man z.B. unter \say{https://github.com/nodemcu/nodemcu-flasher}.
+
+\section{Windows}
+
+\begin{enumerate}
+    \item Installieren Sie die aktuellsten Versionen von PlatformIO, Node.js und Git manuell
+    \item Dadurch wird Visual Studio Code installiert, mit einem PlatformIO-Symbol (Ameisenkopf/Alien) in der Seitenleiste
+    \item Gehen Sie zu \say{Quick Access / Miscellaneous} und geben Sie den Befehl \say{Clone Git Project} ein, und geben Sie \href{https://github.com/ESPWortuhr/Multilayout-ESP-Wordclock}{https://github.com/ESPWortuhr/Multilayout-ESP-Wordclock} als URL ein
+    \item Gehen Sie dann zu \say{Projekte}, fügen Sie das neue Projekt mit \say{Vorhandenes hinzufügen} zur Liste hinzu und klicken Sie auf \say{Öffnen}.
+    \item In der PlatformIO-Seitenleiste erscheint nun \say{Project Tasks}. Wählen Sie den Befehl \say{General / Upload} (dauert ein paar Minuten, die Software wird zuerst erstellt).
+    \item Schließen Sie den ESP8266 über USB an. Wenn die Wortuhr-Software erstellt ist, wird sie auf dem ESP installiert.
+\end{enumerate}
+
+\section{macOS}
+
+Der einfachste Weg ist die Installation mit \say{Homebrew}:
+
+\begin{lstlisting}
+    brew install platformio
+    brew install node
+    git clone https://github.com/ESPWortuhr/Wortuhr
+    cd Wortuhr
+    pio run -t upload
+\end{lstlisting}
+
+Dabei ist der ESP über USB angeschlossen. Die Wortuhr-Software wird dabei mittels PlatformIO erstellt und auf den ESP übertragen.
+
+\section{Linux}
+
+\begin{lstlisting}
+    python3 -c "$(curl -fsSL https://raw.githubusercontent.com/ platformio/platformio/master/scripts/get-platformio.py)"
+    sudo apt install npm
+    git clone https://github.com/ESPWortuhr/Wortuhr
+    cd Wortuhr
+    pio run -t upload
+\end{lstlisting}
+
+Dabei ist der ESP über USB angeschlossen. Die Wortuhr-Software wird dabei mittels PlatformIO erstellt und auf den ESP übertragen.
+
+\section{Erster Start und WLAN-Einrichtung}
+Nach dem erfolgreichen Aufspielen startet die Uhr neu. Falls noch keine WLAN-Daten hinterlegt sind, erstellt sie ein eigenes WLAN für die Einrichtung. Die Standard-SSID ist \say{Connect\_to\_Wordclock}, sofern sie in der Firmware-Konfiguration nicht geändert wurde.
+
+\begin{enumerate}
+    \item Mit Smartphone oder Laptop mit dem WLAN der Uhr verbinden.
+    \item Falls sich kein Anmeldefenster öffnet, im Browser \say{http://192.168.4.1} aufrufen.
+    \item Das heimische WLAN auswählen und die Zugangsdaten eintragen.
+    \item Nach dem Speichern startet die Uhr neu und verbindet sich mit dem Heimnetzwerk.
+    \item Die danach verwendete IP-Adresse wird in der Grundeinstellung beim Start als Laufschrift ausgegeben.
+\end{enumerate}
+
+\section{Update der Firmware über das Web-Frontend}
+Mit der Software ist es möglich, die Firmware \textbf{OTA} (over the air), über den in der Uhr eingebauten Webserver zu aktualisieren. Dies ist in den meisten Fällen einfacher als das direkte Flashen.
+Ausschlaggebend für diese Vorgehensweise ist, dass die Uhr über WLAN erreichbar ist. Die Update-Schnittstelle ist dann über die Adresse
+http://<IP-Adresse der Uhr>:81/update erreichbar (Beispiel: http://192.168.4.1:81/update). Die Adresse der Uhr wird in der Grundeinstellung beim Start als Laufschrift ausgegeben.
+
+\section{Optionaler Zugriffsschutz für das Web-Frontend}
+Das Web-Frontend kann bereits in der Firmware-Konfiguration mit HTTP-Basic-Auth geschützt werden. Dazu werden in \texttt{include/Config.h} im Abschnitt \say{Web interface settings} die Werte \texttt{WEB\_PROTECTED}, \texttt{WEB\_USER} und \texttt{WEB\_PASSWORD} gesetzt. Ist \texttt{WEB\_PROTECTED} auf \texttt{true} gestellt, fragt die Uhr beim Zugriff auf Web-Frontend, Websocket-Verbindung und OTA-Update-Seite nach Benutzername und Passwort.
+
+Wichtig: Das Standardpasswort \texttt{CHANGE\_THIS\_PASSWORD} darf für eine produktiv verwendete Uhr nicht unverändert bleiben. Nach einer Änderung in \texttt{Config.h} muss die Firmware neu gebaut und auf die Uhr übertragen werden.
+
+\chapter{Hardware}
+
+Für den Aufbau der Wortuhr wird folgende elektronische Hardware benötigt:
+
+\begin{itemize}
+    \item NodeMCU oder vergleichbares Board mit ESP8266-, ESP8285-, ESP32- oder ESP32-C3-Chip
+    \item RGB-LED-Streifen WS2812B oder RGBW-Streifen SK6812
+    \item Stromversorgung 5 V / 2 A
+    \item Optional: Hardware-Taster für Power, Modus und Geschwindigkeit/Farbe
+    \item Optional: LDR, 10 KOhm Widerstand
+    \item Optional: BH1750 (digitaler Helligkeitssensor, ersetzt LDR)
+    \item Optional: DS3231 (Echtzeituhr, für Offline-Betrieb)
+\end{itemize}
+
+Neben der Elektronik werden für den mechanischen Aufbau weitere Materialien benötigt. Da es verschiedene Arten gibt, eine Uhr zu bauen, sind hier nur die grundlegenden Dinge aufgeführt:
+
+\begin{itemize}
+    \item Bilderrahmen (Holz oder Metall mit mindestens 14 mm Rahmenhöhe)
+    \item Diffusorfolie
+    \item Buchstabenmaske
+    \item Abstandsgitter (Holz oder Kunststoffschaum)
+\end{itemize}
+
+\section{Pegelanpassung}
+
+Der ESP arbeitet intern mit einer Betriebsspannung von 3,3 V. Die WS2812(B)-Streifen arbeiten dagegen mit 5 V. Dies erfordert eine Pegelanpassung, damit die digitalen Signale fehlerfrei zu den Streifen übertragen werden können. Ohne Anpassung kann es auch funktionieren, muss es aber nicht.
+Es gilt: "Der minimale High-Pegel des Ausgangs muss höher sein als der minimale High-Pegel des Eingangs"
+Was heißt das im Klartext?
+Laut Datenblatt des LED-Streifens sind folgende Pegel notwendig, um ein \say{sauberes} HIGH- und LOW-Signal zu bekommen.
+Um ein HIGH-Signal am Eingang des WS2812B-Streifens zu erzeugen, muss laut Datenblatt (Bild 1) mindestens ein Pegel von 4,3 V erzeugt werden. Da der ESP aber maximal 3,3 V erzeugen kann, wird hier kein sicheres HIGH-Signal erzeugt.
+
+Nun kommt der Trick mit der Diode:
+Die erste LED wird nun mit einer Diode in der Plus-Leitung betrieben. Die Durchlassspannung der Diode beträgt 0,7 V. Das heißt, dass die erste LED mit 4,3 V betrieben wird. Das ist laut Datenblatt auch zulässig. Bei 4,3 V beträgt der benötigte HIGH-Pegel nun noch 3,6 V. Da die Hersteller noch Toleranzen mit einberechnen, funktioniert das ganze Konstrukt wieder. Nun gibt die erste LED den Pegel mit 4,3 V an die nächste LED weiter. Diese wird wieder mit 5 V betrieben und der HIGH-Pegel liegt mit 4,3 V wieder innerhalb der Datenblatt-Toleranz. Die zweite LED verstärkt sozusagen das Signal wieder auf die vollen 5 V.
+Das heißt, die erste LED wird sozusagen als Pegelanpassung missbraucht.
+
+\section{Anschlussbeispiel}
+Der Datenpin des LED-Streifens ist in der Grundeinstellung an dem Port \say{Rx} (GPIO3) angeschlossen. Damit bleibt die bisherige ESP8266-Ansteuerung mit festem RX-Pin kompatibel. Wird der LED-Pin in der Hardware-Konfiguration geändert, verwendet die Firmware auf dem ESP8266 automatisch die Bit-Bang-Ansteuerung für den gewählten GPIO. Wie auf dem Schaltbild muss eine Diode in die +5-V-Leitung der ersten LED. Die +5-V-Leitung zwischen der ersten und zweiten LED muss durchtrennt werden (aber nur diese, nicht Daten und GND!).
+Am zweiten Streifen wird dann zusätzlich vom Netzteil +5 V eingespeist. Die LEDs vom ersten Streifen werden dann sozusagen \say{rückwärts} mit den nötigen +5 V versorgt.
+
+    \begin{figure} [h]
+		\centering
+		\includegraphics[width=\linewidth]{Logos/Schematic.pdf} 
+		\caption{Anschlussbeispiel}
+		\label{abb.Schematic}
+	\end{figure}
+
+\section{Konfigurierbare Hardware-Pins}
+
+Die Firmware kann den Datenpin des LED-Streifens und drei optionale Hardware-Taster konfigurieren. Die Konfiguration wird im Web-Frontend unter \say{Einstellungen} im Bereich \say{Hardware-Pins} vorgenommen. Es muss immer die GPIO-Nummer des Controllers eingetragen werden, nicht die auf dem Board aufgedruckte Bezeichnung. Bei NodeMCU-Boards ist zum Beispiel \say{D4} nicht die richtige Eingabe, sondern die zugehörige GPIO-Nummer.
+
+    \begin{figure} [H]
+        \centering
+        \includegraphics[width=0.9\linewidth]{Logos/WebFrontendHardwarePins.png}
+        \caption{Hardware-Pin-Konfiguration im Web-Frontend}
+        \label{abb.HardwarePinsWeb}
+    \end{figure}
+
+\subsection{Standard-Pins}
+
+\begin{table}[H]
+    \centering
+    \begin{tabularx}{\linewidth}{|l|l|X|}
+        \hline
+        Funktion & Standard-GPIO & Hinweis \\
+        \hline
+        LED-Streifen & GPIO3 & Auf ESP8266 entspricht dies RX und nutzt die alte, feste Standard-Ansteuerung. \\
+        \hline
+        Power-Taste & GPIO2 & Taster gegen GND; wird per internem Pull-up gelesen. \\
+        \hline
+        Mode-Taste & GPIO13 & Kurzer Druck: nächster Modus; langer Druck: nächste Transition. \\
+        \hline
+        Speed-Taste & GPIO14 & Kurzer Druck: Helligkeit; langer Druck: Farbton. \\
+        \hline
+    \end{tabularx}
+    \caption{Standardbelegung der konfigurierbaren Hardware-Pins}
+    \label{tab.HardwarePinsDefaults}
+\end{table}
+
+Die Taster werden mit \texttt{INPUT\_PULLUP} betrieben. Ein Taster verbindet den GPIO daher beim Drücken mit GND. Für alle vier Hardware-Pins gilt: Jeder GPIO darf nur einmal verwendet werden. Die Firmware prüft doppelte Pins und ungültige Werte und stellt bei ungültigen EEPROM-Werten wieder die Standard-Pins her.
+
+\subsection{I2C-Pins und I2C-Scan}
+
+Im selben Bereich können auch die I2C-Pins für optionale I2C-Geräte wie BH1750-Helligkeitssensor oder DS3231-Echtzeituhr eingestellt werden. Für den ESP8266 sind die Standardwerte SDA = D2 und SCL = D1, beim klassischen ESP32 SDA = GPIO21 und SCL = GPIO22. Beim ESP32-C3 sind die I2C-Pins standardmäßig deaktiviert und müssen passend zum verwendeten Board gesetzt werden.
+
+Der Wert \texttt{255} deaktiviert einen I2C-Pin. SDA und SCL müssen immer gemeinsam gesetzt oder gemeinsam deaktiviert werden. Nach dem Speichern kann mit \say{I2C-Adressen suchen} geprüft werden, ob angeschlossene Geräte auf dem gewählten Bus antworten. Gefundene Adressen werden im Web-Frontend angezeigt; bei ungültigen oder deaktivierten Pins erscheint eine entsprechende Meldung.
+
+\subsection{Geeignete Pins je Controller}
+
+Die folgenden Empfehlungen beziehen sich auf die in diesem Projekt verwendeten Controller-Varianten. Zusätzlich muss geprüft werden, welche Pins auf dem konkreten Entwicklungsboard wirklich herausgeführt sind. Einige Hersteller drucken Board-Bezeichnungen wie \say{D1} oder \say{RX} auf; in der Web-Konfiguration wird trotzdem die GPIO-Nummer eingetragen.
+
+\subsubsection{ESP8266 / ESP8285}
+
+Für ESP8266-Boards akzeptiert die Firmware GPIO0 bis GPIO16. Empfehlenswert sind:
+
+\begin{itemize}
+    \item LED-Streifen: Standard GPIO3/RX. Alternativ GPIO4, GPIO5, GPIO12, GPIO13 oder GPIO14.
+    \item Hardware-Taster: GPIO4, GPIO5, GPIO12, GPIO13 oder GPIO14. GPIO2 ist als Standard für die Power-Taste nutzbar, darf beim Booten aber nicht auf LOW gezogen werden.
+    \item Nicht verwenden: GPIO6 bis GPIO11, da diese üblicherweise mit dem Flash-Speicher verbunden sind.
+    \item Mit Vorsicht verwenden: GPIO0, GPIO2 und GPIO15 sind Boot-Strapping-Pins. Falsche Pegel beim Einschalten können den Bootvorgang verhindern. GPIO16 hat keinen normalen internen Pull-up und ist deshalb für die Taster-Schaltung nicht empfohlen.
+\end{itemize}
+
+\subsubsection{ESP32}
+
+Für ESP32-Boards akzeptiert die Firmware GPIO0 bis GPIO39. Empfehlenswert sind:
+
+\begin{itemize}
+    \item LED-Streifen: GPIO4, GPIO13 bis GPIO19, GPIO21 bis GPIO23, GPIO25 bis GPIO27, GPIO32 oder GPIO33. GPIO3 bleibt als Standard aus Kompatibilitätsgründen möglich, liegt aber oft auf RX0.
+    \item Hardware-Taster: GPIO4, GPIO13 bis GPIO19, GPIO21 bis GPIO23, GPIO25 bis GPIO27, GPIO32 oder GPIO33.
+    \item Nicht verwenden: GPIO6 bis GPIO11, da diese üblicherweise mit dem SPI-Flash verbunden sind.
+    \item Nicht für den LED-Streifen verwenden: GPIO34 bis GPIO39, da diese nur Eingang sind. Für Taster sind sie nur mit externem Pull-up geeignet, da sie keine internen Pull-up-/Pull-down-Widerstände besitzen.
+    \item Mit Vorsicht verwenden: GPIO0, GPIO2, GPIO5, GPIO12 und GPIO15 sind Boot-Strapping-Pins. GPIO1 und GPIO3 sind die Standard-UART-Pins und können die serielle Ausgabe stören.
+\end{itemize}
+
+\subsubsection{ESP32-C3}
+
+Der ESP32-C3 besitzt GPIO0 bis GPIO21. Auch wenn die Weboberfläche höhere Zahlen nicht verhindert, sollten nur tatsächlich vorhandene Pins des Boards verwendet werden. Empfehlenswert sind:
+
+\begin{itemize}
+    \item LED-Streifen und Hardware-Taster: GPIO0, GPIO1, GPIO3, GPIO4, GPIO5, GPIO6, GPIO7, GPIO10, GPIO11, GPIO20 oder GPIO21, sofern diese Pins auf dem verwendeten Board herausgeführt sind.
+    \item Nicht verwenden: GPIO12 bis GPIO17, da diese üblicherweise mit SPI-Flash oder PSRAM verbunden sind.
+    \item Mit Vorsicht verwenden: GPIO2, GPIO8 und GPIO9 sind Boot-Strapping-Pins. GPIO18 und GPIO19 sind standardmäßig für USB-JTAG vorgesehen.
+    \item Hinweis zu den Standard-Pins: GPIO13 und GPIO14 sind auf ESP32-C3-Boards häufig nicht als freie GPIOs nutzbar. Für ESP32-C3 sollten die Button-Pins daher vor dem Verdrahten auf geeignete freie GPIOs geändert werden.
+\end{itemize}
+
+Die Einschränkungen orientieren sich an den GPIO-Hinweisen der Espressif-Dokumentation für ESP32 und ESP32-C3 sowie den bekannten ESP8266-Boot- und Flash-Pins.
+
+\subsection{Bedienung der Hardware-Taster}
+
+\begin{itemize}
+    \item Power-Taste: schaltet die LEDs aus und bei erneutem Druck wieder mit den vorherigen Farben ein.
+    \item Mode-Taste: kurzer Druck wechselt zum nächsten Anzeigemodus, langer Druck zur nächsten Transition.
+    \item Speed-Taste: kurzer Druck erhöht die Helligkeit, langer Druck wechselt den Farbton.
+\end{itemize}
+
+\chapter{Funktionen der Uhrensoftware auf dem ESP}
+
+\section{Anzeigemodi im Web-Frontend}
+Die wichtigsten Funktionen werden im Web-Frontend unter \say{Funktionen} ausgewählt. Neben der klassischen Wortuhr stehen Sekundenanzeige, Digitaluhr, Laufschrift, Regenbogen, Farbwechsel, Feuer, feste Farbe und Symbol-Anzeige zur Verfügung. Je nach Modus werden darunter nur die jeweils passenden Einstellungen eingeblendet, zum Beispiel Geschwindigkeit, Helligkeit, Lauftext, Symbolauswahl oder die Feuer-Parameter.
+
+    \begin{figure} [H]
+        \centering
+        \includegraphics[width=0.9\linewidth]{Logos/WebFrontendFunctionsModes.png}
+        \caption{Auswahl der Anzeigemodi im Web-Frontend}
+        \label{abb.WebFrontendFunctionsModes}
+    \end{figure}
+
+Im Modus \say{Laufschrift} wird der unter \say{Lauftext} gespeicherte Text über die Matrix bewegt. Sehr kurze Texte werden automatisch anders behandelt: Nach dem Entfernen führender und nachfolgender Leerzeichen werden ein oder zwei Zeichen statisch zentriert angezeigt, sofern sie auf die gewählte Matrix passen. Ein- oder zweistellige Zahlen werden dabei wie eine kleine Digitalanzeige dargestellt.
+
+Im Modus \say{Symbol} kann eines der vordefinierten Bitmap-Symbole angezeigt werden. Zur Auswahl stehen Herz, Smiley, Note, Schneeflocke, Brief, Glocke, Stop und Standby. Die Farbe wird über die normalen Vordergrund-Farbeinstellungen bestimmt; im Farbmodus \say{Polychrom} wird das Symbol mit dem Verlauf von der Vordergrund- zur Sekundärfarbe gezeichnet. Die Helligkeit des Symbols wird über den Regler \say{Helligkeit} des Modus eingestellt, die Geschwindigkeit beeinflusst die Wiederholung bzw. Aktualisierung des Modus.
+
+    \begin{figure} [H]
+        \centering
+        \includegraphics[width=0.9\linewidth]{Logos/WebFrontendSymbolMode.png}
+        \caption{Symbol-Auswahl im Web-Frontend}
+        \label{abb.WebFrontendSymbolMode}
+    \end{figure}
+
+Im Modus \say{Feuer} zeigt die gesamte Matrix eine Flammenanimation, die von der untersten Zeile nach oben steigt. Die Uhrzeit wird in diesem Modus nicht angezeigt. Neben Helligkeit und Geschwindigkeit stehen zwei weitere Regler zur Verfügung:
+
+\begin{itemize}
+    \item \say{Abkühlung} (20 bis 120, Standard 65): Je höher der Wert, desto schneller kühlen die Flammen ab und desto niedriger bleiben sie.
+    \item \say{Funkenflug} (40 bis 220, Standard 120): Je höher der Wert, desto häufiger entstehen am unteren Rand neue Funken und desto unruhiger wirkt das Feuer.
+\end{itemize}
+
+\section{Übergänge und Animationen}
+
+Unter \say{Funktionen} kann im Bereich \say{Übergang} eingestellt werden, wie Änderungen der Wortmatrix animiert werden. Zur Auswahl stehen unter anderem Hoch- und Runterscrollen, Schieben nach links oder rechts, Überblenden, Laser, Matrix-Regen, Bälle, Feuerwerk, Schlange und Zufällig. Zusätzlich lässt sich die Dauer des Übergangs einstellen. Die Option \say{Demo} löst die gewählte Transition zu Testzwecken aus.
+
+Im Bereich \say{Farben} wird über den \say{Farbmodus} festgelegt, wie die Wörter eingefärbt werden: \say{Monochrom} verwendet eine einzige Vordergrundfarbe, \say{Polychrom} blendet zeilenweise von der Vordergrundfarbe in eine zweite, frei wählbare \say{Sekundärfarbe} über, und \say{Wortweise zufällig} färbt jedes angezeigte Wort einzeln zufällig ein. Der Farbmodus wirkt sowohl auf die laufende Anzeige als auch auf Übergänge. Vordergrund-, Sekundär-, Hintergrund- und, bei aktivem Sekundenrahmen, Rahmenfarbe werden über die jeweilige Auswahl und das Farbrad darunter gesetzt.
+
+Der Farbverlauf des Modus \say{Polychrom} gilt nicht nur für die Wortuhr, sondern auch für Digitaluhr, Laufschrift, feste Farbe und Symbol-Anzeige. Die Minuten-LEDs leuchten in diesem Modus in der Sekundärfarbe, also in der Farbe der untersten Zeile. \say{Wortweise zufällig} benötigt einzelne Wörter und wirkt deshalb nur in der Wortuhr; in allen anderen Modi wird stattdessen die Vordergrundfarbe verwendet. Farbänderungen werden auch während eines laufenden Übergangs sofort übernommen, ohne dass die Animation neu startet.
+
+Einige Animationen werden auch für besondere Ereignisse verwendet. An Silvester zeigt die Uhr einen Countdown und anschließend eine Feuerwerksanimation. Im Bereich \say{Geburtstage} können bis zu fünf Termine im Format \texttt{MM-DD} hinterlegt werden. An diesen Tagen erscheint alle fünf Minuten eine Feuerwerksanimation. Bei kompatiblen Frontplatten werden währenddessen die Wörter \say{Happy Birthday} statt der Uhrzeit angezeigt.
+
+\section{Anzeigeoptionen}
+
+Unter \say{Anzeigeoptionen} werden nicht nur Frontplatte und Bauart gesetzt, sondern auch die Darstellung von Sprache, Minuten, Sekunden und Startverhalten angepasst.
+
+\subsection{Sprach- und Minutenlogik}
+
+Im Bereich \say{Sprache} kann eingestellt werden, wann der Text \say{Es ist} angezeigt wird. Außerdem lassen sich sprachliche Varianten für Viertelstunden und Zwanzig-Minuten-Angaben wählen, zum Beispiel \say{viertel nach neun} oder \say{viertel zehn}. Diese Optionen hängen von der gewählten Sprache und Frontplatte ab; es werden nur die Varianten eingeblendet, für die die Frontplatte die passenden Wörter besitzt.
+
+Die Voreinstellung richtet sich nach der Frontplatte: Besitzt sie das Wort \say{zwanzig}, zeigt die Uhr um 9:20 Uhr \say{zwanzig nach neun} und um 9:40 Uhr \say{zwanzig vor zehn}. Besitzt sie das Wort \say{dreiviertel}, zeigt sie um 9:45 Uhr \say{dreiviertel zehn}. Wer die jeweils andere Schreibweise bevorzugt, also \say{zehn vor halb zehn}, \say{zehn nach halb zehn} oder \say{viertel vor zehn}, stellt die Option im Bereich \say{Sprache} um. Bei einigen Sprachen, zum Beispiel Spanisch, Türkisch, Russisch, Bengalisch und Ungarisch, ist die Schreibweise fest vorgegeben.
+
+Diese Voreinstellung wird beim Zurücksetzen auf Standardwerte und bei jedem Wechsel der Frontplatte gesetzt. Eine bereits eingerichtete Uhr behält bei einem Firmware-Update ihre gespeicherten Einstellungen.
+
+Die Minutenanzeige kann deaktiviert oder über zusätzliche LEDs dargestellt werden. Je nach Bauart stehen vier Minuten-LEDs, sieben Minuten-LEDs oder die Anzeige in Worten zur Verfügung. Die Einstellung muss zur mechanischen Front und zur Verdrahtung passen.
+
+\subsection{Sekunden im Rahmen}
+
+Ein Sekundenrahmen ist ein zusätzlicher LED-Streifen, der um die Buchstabenmatrix herum verlegt ist. Er kann bei fast allen Frontplatten nachgerüstet werden; ausgenommen sind nur die Layouts 16 \(\times\) 8 und 22 \(\times\) 11 Wetter. Im Bereich \say{Sekunden} wird unter \say{Anzahl LEDs im Sekundenrahmen} eingetragen, wie viele LEDs der Rahmen tatsächlich besitzt. Möglich sind 0 bis 200 LEDs; der Wert 0 deaktiviert den Rahmen und ist die Voreinstellung.
+
+Die Rahmen-LEDs werden am Ende des LED-Streifens angeschlossen, also hinter der Buchstabenmatrix und den Minuten-LEDs. Die Gesamtlänge des Streifens berechnet die Firmware aus Frontplatte, Bauart, Minuten-LEDs und Rahmen selbst.
+
+Sobald eine LED-Anzahl größer als 0 eingetragen ist, kann die Sekundenanzeige im Rahmen ausgeschaltet oder als Punkt, Sektor oder umlaufender Sektor dargestellt werden. Zusätzlich erscheint im Bereich \say{Farben} die Auswahl \say{Rahmen}, über die der Rahmen eine eigene Farbe erhält.
+
+\subsection{Boot-Optionen}
+
+Im Bereich \say{Boot} wird festgelegt, was beim Neustart sichtbar sein soll. Die LEDs können kurz aufblitzen, einmal durchlaufen, während der Netzwerksuche ein WLAN-Symbol anzeigen und nach erfolgreicher Verbindung die IP-Adresse ausgeben. Die IP-Anzeige ist besonders hilfreich, wenn die Uhr per Browser konfiguriert oder ein OTA-Update gestartet werden soll.
+
+\section{Verbinden der Uhr mit dem eigenen WLAN}
+Nach dem erfolgreichen Verbinden kann die Uhr nach Eingabe der angezeigten IP-Adresse in einem Browser konfiguriert werden. Dabei kann die Uhr auch mit dem eigenen WLAN Netz verbunden werden.
+
+Die WLAN-Konfiguration befindet sich im Web-Frontend unter \say{Einstellungen} im Bereich \say{Wi-Fi / WLAN}. Dort kann die Neukonfiguration gestartet oder das WLAN bis zum Neustart deaktiviert werden.
+
+    \begin{figure} [H]
+        \centering
+        \includegraphics[width=0.9\linewidth]{Logos/WebFrontendWifi.png}
+        \caption{WLAN-Konfiguration im Web-Frontend}
+        \label{abb.WebFrontendWifi}
+    \end{figure}
+ 
+\section{Hostname}
+Unter \say{Einstellungen} im Bereich \say{Hostname} wird der Name festgelegt, unter dem sich die Uhr im Netzwerk anmeldet. Die Voreinstellung ist \say{ESPWordclock}. Ein neuer Hostname wird gespeichert und sofort übernommen, ein Neustart ist nicht nötig; auf ESP32-Boards verbindet sich die Uhr dabei kurz neu mit dem WLAN. In Netzwerken mit mDNS-Unterstützung ist das Web-Frontend anschließend auch ohne IP-Adresse unter \texttt{http://<Hostname>.local} erreichbar. Werden mehrere Uhren im selben Netzwerk betrieben, sollte jede einen eigenen Hostnamen erhalten.
+
+\section{Zeitserver (NTP Server)}
+Falls die Uhr an das eigene WLAN mit Internet angebunden wird, kann ein Zeitserver hinterlegt werden. Dieser sorgt dafür, dass die Uhrzeit zyklisch sekundengenau gestellt wird. 
+
+Der Zeitserver wird im Web-Frontend unter \say{Einstellungen} im Bereich \say{Zeitserver} eingetragen und gespeichert.
+
+    \begin{figure} [H]
+        \centering
+        \includegraphics[width=0.9\linewidth]{Logos/WebFrontendTimeServer.png}
+        \caption{Zeitserver-Konfiguration im Web-Frontend}
+        \label{abb.WebFrontendTimeServer}
+    \end{figure}
+
+\section{Zeitzone und manuelle Uhrzeit}
+Die Zeitzone wird im Web-Frontend unter \say{Einstellungen} im Bereich \say{Zeitzone} als POSIX-Zeitzone gespeichert. Für Deutschland ist die Voreinstellung \path{CET-1CEST,M3.5.0,M10.5.0/3}. Die POSIX-Schreibweise enthält neben der Abweichung zur UTC auch die Regeln für Sommer- und Winterzeit; dadurch kann die Uhr die lokale Zeit korrekt aus der vom Zeitserver gelieferten UTC-Zeit berechnen.
+
+Im Bereich \say{Uhrzeit manuell einstellen} kann die Uhrzeit direkt gesetzt werden. Das ist vor allem für Tests, für den Betrieb ohne WLAN oder als schnelle Korrektur hilfreich. Wenn die Uhr später wieder einen Zeitserver erreicht, wird die Zeit erneut per NTP synchronisiert.
+
+    \begin{figure} [H]
+        \centering
+        \includegraphics[width=0.9\linewidth]{Logos/WebFrontendTimezone.png}
+        \caption{Zeitzone und manuelle Uhrzeit im Web-Frontend}
+        \label{abb.WebFrontendTimezone}
+    \end{figure}
+ 
+\section{Automatische Helligkeitsregelung}
+Falls der optionale LDR an der Uhr angeschlossen wurde, ist es möglich, die Helligkeit automatisch, abhängig der Umgebungshelligkeit, regeln zu lassen. Dazu muss folgende Einstellung aktiviert werden. Durch das Feld Kalibrierung kann man die Grundhelligkeit an seine eigenen Wünsche anpassen.
+
+Die automatische Helligkeit wird im Web-Frontend unter \say{Einstellungen} im Bereich \say{Helligkeit} konfiguriert. Im Modus \say{Automatisch} können minimale und maximale LED-Helligkeit sowie das Referenz-Umgebungslicht angepasst werden.
+
+    \begin{figure} [H]
+        \centering
+        \includegraphics[width=0.9\linewidth]{Logos/WebFrontendAutoBrightness.png}
+        \caption{Automatische Helligkeitsregelung im Web-Frontend}
+        \label{abb.WebFrontendAutoBrightness}
+    \end{figure}
+
+Im manuellen Modus kann die Helligkeit zeitabhängig gesetzt werden. Dafür stehen Zeitbereiche von 0:00 bis 23:59 Uhr zur Verfügung, die jeweils auf 100 \%, 80 \%, 60 \%, 40 \%, 20 \% oder \say{Aus} gestellt werden können. So kann die Uhr nachts automatisch dunkler leuchten, auch wenn kein Helligkeitssensor angeschlossen ist.
+
+\section{LED-Typ, Weißpunkt und Wetterdaten}
+
+Unter \say{Einstellungen} kann der verwendete LED-Typ ausgewählt werden. Für WS2812-Streifen stehen verschiedene Farbreihenfolgen wie BRG, GRB, RGB, RBG und BGR zur Verfügung. Bei SK6812-RGBW-Streifen kann zusätzlich der Typ der weißen LED als Warmweiß, Neutralweiß oder Kaltweiß gesetzt werden. Wenn Farben falsch angezeigt werden, ist dies meistens die erste Einstellung, die geprüft werden sollte.
+
+Für Wetter-Frontplatten kann im Bereich \say{Wetter} ein OpenWeatherMap-API-Schlüssel und eine City-ID hinterlegt werden. Die Uhr ruft damit Wettervorhersagen ab und kann diese auf Layouts anzeigen, die Wetterwörter bzw. Wetterbereiche unterstützen. Ohne passende Frontplatte oder ohne gültigen API-Schlüssel bleibt diese Funktion wirkungslos. Kann die Uhr über längere Zeit keine neue Vorhersage abrufen, wird die veraltete Vorhersage ausgeblendet, statt weiter angezeigt zu werden.
+
+\section{Smart Home und MQTT}
+
+Die Uhr kann über MQTT in ein Smart-Home-System eingebunden werden. Im Web-Frontend befindet sich dafür der Bereich \say{Smart Home}. Dort werden MQTT aktiviert sowie Serveradresse, Port, Benutzername, Passwort, Client-ID und Topic gespeichert. Die MQTT-Zugangsdaten können alternativ bereits in \texttt{include/Config.h} vorkonfiguriert werden.
+
+Über MQTT lassen sich grundlegende Funktionen wie Ein-/Ausschalten, Helligkeit, Farbe, Effekt bzw. Modus, Lauftext, automatische Helligkeit und Übergangseinstellungen steuern. Statuswerte wie aktuelle Farbe, Helligkeit, Modus, WLAN-Signal, Uptime und Sensordaten werden ebenfalls veröffentlicht.
+
+Als Effekte stehen \say{Wordclock}, \say{Seconds}, \say{Digitalclock}, \say{Scrollingtext}, \say{Rainbowcycle}, \say{Rainbow}, \say{Fire}, \say{Color} und \say{Symbol} zur Auswahl. Für Helligkeit und Farbe gelten folgende Regeln:
+
+\begin{itemize}
+    \item Ein Helligkeitsbefehl setzt die Helligkeit von Vordergrund- und Sekundärfarbe gemeinsam. Im Farbmodus \say{Polychrom} wird dadurch der gesamte Verlauf einschließlich der Minuten-LEDs gleichmäßig heller oder dunkler. Ein im Web-Frontend eingestellter Helligkeitsunterschied zwischen beiden Farben geht dabei verloren.
+    \item Ist die automatische Helligkeitsregelung aktiv, werden Helligkeitsbefehle über MQTT ignoriert.
+    \item Ein Farbbefehl ändert nur die Vordergrundfarbe. Die Sekundärfarbe kann ausschließlich im Web-Frontend gewählt werden.
+    \item Ein- und Ausschalten wirkt auf alle Farben; beim Einschalten wird die vorherige Helligkeit wiederhergestellt.
+\end{itemize}
+
+Mit \say{Sende HA Discovery} sendet die Uhr die Home-Assistant-Autodiscovery-Konfiguration. Danach erscheint sie in Home Assistant als MQTT-Gerät mit Licht-Entität und zusätzlichen Steuerelementen, ohne dass die YAML-Konfiguration manuell angelegt werden muss. Voraussetzung ist ein erreichbarer MQTT-Broker und aktivierte MQTT-Discovery in Home Assistant.
+
+\section{Neustart und Zurücksetzen}
+
+Im Bereich \say{Neu starten / Zurücksetzen} kann die Uhr direkt aus dem Web-Frontend neu gestartet werden. Außerdem können die gespeicherten Einstellungen auf Standardwerte zurückgesetzt werden. Nach Änderungen an Matrixgröße, Bauart, Hardware-Pins oder anderen systemnahen Einstellungen zeigt das Web-Frontend einen Hinweis an, wenn ein Neustart empfohlen wird.
+
+\section{Fehlersuche}
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabularx}{\linewidth}{|l|X|}
+        \hline
+        Problem & Mögliche Ursache und Lösung \\
+        \hline
+        Kein WLAN der Uhr sichtbar & Die Uhr neu starten und einige Sekunden warten. Falls bereits WLAN-Daten gespeichert sind, startet kein Captive Portal. Dann die aktuelle IP-Adresse verwenden oder die WLAN-Konfiguration im Web-Frontend erneut starten. \\
+        \hline
+        Web-Frontend ist nicht erreichbar & Prüfen, ob sich Gerät und Uhr im gleichen Netzwerk befinden. Die beim Start angezeigte IP-Adresse verwenden und bei OTA-Updates den Port \texttt{:81} ergänzen. \\
+        \hline
+        Web-Frontend fragt nach Benutzername und Passwort & In \texttt{include/Config.h} ist \texttt{WEB\_PROTECTED} aktiviert. Mit den dort gesetzten Werten \texttt{WEB\_USER} und \texttt{WEB\_PASSWORD} anmelden. \\
+        \hline
+        LEDs bleiben dunkel & 5-V-Versorgung, GND-Verbindung, Datenrichtung des LED-Streifens und den eingestellten LED-Pin prüfen. Bei optionalen Tastern darf kein Boot-Strapping-Pin dauerhaft auf LOW gezogen werden. \\
+        \hline
+        Farben werden falsch angezeigt & Im Web-Frontend unter \say{Einstellungen} den LED-Typ bzw. die Farbreihenfolge anpassen. Unterschiedliche LED-Streifen verwenden verschiedene RGB-/RGBW-Reihenfolgen. \\
+        \hline
+        Uhrzeit stimmt nicht & WLAN-Verbindung, Zeitserver, Zeitzone und Internetzugang prüfen. Für den Offline-Betrieb muss eine RTC wie DS3231 korrekt angeschlossen sein oder die Uhrzeit manuell gesetzt werden. \\
+        \hline
+    \end{tabularx}
+    \caption{Häufige Fehler und erste Prüfschritte}
+    \label{tab.Troubleshooting}
+\end{table}
+
+\end{document}

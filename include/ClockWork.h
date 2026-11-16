@@ -1,0 +1,120 @@
+#pragma once
+
+#include "HardwareButtonController.h"
+#include <NeoPixelBus.h>
+
+class ClockWork {
+private:
+    uint16_t countMillisSpeed = 0;
+    uint32_t previousMillis = 0;
+    uint32_t lux = 0;
+    HardwareButtonController hardwareButtonController;
+
+private:
+    //------------------------------------------------------------------------------
+    // Helper Functions
+    //------------------------------------------------------------------------------
+    void loopAutoBrightLogic();
+    void loopHardwareButtons();
+    void handleHardwareButtonAction(HardwareButtonAction action);
+    void toggleHardwareButtonPower();
+    void nextHardwareButtonMode();
+    void nextHardwareButtonTransition();
+    void increaseHardwareButtonBrightness();
+    void nextHardwareButtonHue();
+    void requestHardwareButtonDisplayRefresh();
+    uint32_t num32BitWithOnesAccordingToColumns();
+    void reallocateSecondsFrame();
+
+    //------------------------------------------------------------------------------
+    // Front Effect Functions
+    //------------------------------------------------------------------------------
+    struct StaticScrollingText {
+        uint8_t start = 0;
+        uint8_t len = 0;
+        uint8_t width = 0;
+        uint8_t height = 0;
+        uint8_t totalWidth = 0;
+        bool onlyDigits = true;
+    };
+
+    void rainbow();
+    void rainbowCycle();
+    void fire();
+    bool getStaticScrollingTextInfo(const char *buf, StaticScrollingText &info);
+    void displayStaticScrollingText(const char *buf,
+                                    const StaticScrollingText &info);
+    void scrollingText(const char *buf);
+    void displaySymbols(BitmapSymbol bitmapSymbolnum);
+    void countdownToMidnight();
+
+    //------------------------------------------------------------------------------
+    // Minute Functions
+    //------------------------------------------------------------------------------
+    void showSpecialWordBeen(const uint8_t min);
+    void showMinuteInWords(uint8_t min);
+    bool checkIfClockHasMinuteInWordsAndItIsSet();
+    void showMinute(uint8_t min);
+    FrontWord getFrontWordForNum(uint8_t min);
+    bool checkTwentyUsage();
+    bool hasTwentyAndCheckForUsage();
+    bool hasDreiviertelAndCheckForUsage();
+    void showQuarterPast(uint8_t &offsetHour);
+    void showQuarterTo(uint8_t &offsetHour);
+    void setMinute(uint8_t min, uint8_t &offsetHour, bool &fullHour);
+
+    //------------------------------------------------------------------------------
+    // Hour Functions
+    //------------------------------------------------------------------------------
+    void setHour(uint8_t std, const bool fullHour);
+
+    //------------------------------------------------------------------------------
+    // Chinese Layout Functions
+    //------------------------------------------------------------------------------
+    void setChineseClock();
+
+    //------------------------------------------------------------------------------
+    // Loop Helper Functions
+    //------------------------------------------------------------------------------
+
+    bool isMidnight(const uint8_t hour);
+    WordclockChanges changesInClockface();
+    void calcClockface();
+    void setClock();
+    void showChineseWeather(uint16_t condition, int8_t temperature);
+    void setDaytimeWords(uint8_t hour);
+    void setItIs(uint8_t min, const uint8_t offsetHour);
+    bool DetermineIfItIsIsShown(const uint8_t min);
+    void DetermineWhichItIsToShow(uint8_t offsetHour, uint8_t min);
+    void clearClockByProgInit();
+
+public:
+    ~ClockWork() = default;
+
+    //------------------------------------------------------------------------------
+    // Helper Functions
+    //------------------------------------------------------------------------------
+    ClockType *getPointer(uint8_t type);
+    void initLedStrip(uint8_t num);
+    void initHardwareButtons();
+    uint32_t getLuxValue() const { return lux; }
+
+    //------------------------------------------------------------------------------
+    // Minute Functions
+    //------------------------------------------------------------------------------
+    void normalizeMinuteVariant();
+    void checkForValidLanguageVariant();
+
+    //------------------------------------------------------------------------------
+    // Boot Functions
+    //------------------------------------------------------------------------------
+    void initBootLed();
+    void initBootLedBlink();
+    void initBootLedSweep(uint32_t delay);
+    void initBootShowIp(const char *buf);
+
+    //------------------------------------------------------------------------------
+    // Loop Functions
+    //------------------------------------------------------------------------------
+    void loop(struct tm &tm);
+};

@@ -1,0 +1,526 @@
+#pragma once
+#include "Arduino.h"
+#include "NumberFont.h"
+#include "version.gen.h"
+#include <NeoPixelBus.h> // HsbColor
+
+#define PAYLOAD_LENGTH 30
+#define MAX_ROW_SIZE 22
+// Widest front matrix currently supported (Ger16x18).
+#define MAX_COL_SIZE 18
+#define MAX_BIRTHDAY_COUNT 5
+
+// The Unique ID is a cross-reference for HTML/JavaScript
+
+#define CLOCK_TYPES_LIST                                                       \
+    /* BN (Bengali) */                                                         \
+    X(BN9x8, 0, _bn9x8, "bn-9-8")                                              \
+    /* CH (Swiss) */                                                           \
+    X(Ch10x11, 1, _ch10x11, "ch-10-11")                                        \
+    X(Ch10x11V2, 2, _ch10x11v2, "ch-10-11-v2")                                 \
+    X(Ch10x11ZH, 3, _ch10x11zh, "ch-10-11-zh")                                 \
+    /* EN (English) */                                                         \
+    X(Eng08x08, 4, _en08x08, "en-08-08")                                       \
+    X(Eng10x11, 5, _en10x11, "en-10-11")                                       \
+    X(Eng11x12, 6, _en11x12, "en-11-12")                                       \
+    /* ES (Spanish) */                                                         \
+    X(Es08x08Cuarto, 7, _es08x08Cuarto, "es-08-08-cuarto")                     \
+    X(Es10x11, 8, _es10x11, "es-10-11")                                        \
+    /* FR (French) */                                                          \
+    X(Fr10x11, 9, _fr10x11, "fr-10-11")                                        \
+    /* DE (German) */                                                          \
+    X(Ger08x08, 10, _de08x08, "de-08-08")                                      \
+    X(Ger08x08Viertel, 11, _de08x08Viertel, "de-08-08-viertel")                \
+    X(Ger10x11, 12, _de10x11, "de-10-11")                                      \
+    X(Ger10x11Alternative, 13, _de10x11Alternative, "de-10-11-alt")            \
+    X(Ger10x11bayerisch, 14, _de10x11bayerisch, "de-10-11-bayerisch")          \
+    X(Ger10x11Clock, 15, _de10x11Clock, "de-10-11-clock")                      \
+    X(Ger10x11Mrrioes, 16, _de10x11Mrrioes, "de-10-11-mrrioes")                \
+    X(Ger10x11Nero, 17, _de10x11Nero, "de-10-11-nero")                         \
+    X(Ger10x11schwaebisch, 18, _de10x11schwaebisch, "de-10-11-schwaebisch")    \
+    X(Ger11x11, 19, _de11x11, "de-11-11")                                      \
+    X(Ger11x11schwaebisch, 20, _de11x11schwaebisch, "de-11-11-schwaebisch")    \
+    X(Ger11x11V2, 21, _de11x11V2, "de-11-11-v2")                               \
+    X(Ger11x11V3, 22, _de11x11V3, "de-11-11-v3")                               \
+    X(Ger13x13, 23, _de13x13, "de-13-13")                                      \
+    X(Ger16x8, 24, _de16x8, "de-16-8")                                         \
+    X(Ger16x18, 25, _de16x18, "de-16-18")                                      \
+    X(Ger22x11Weather, 26, _de22x11Weather, "de-22-11-weather")                \
+    /* HU (Hungarian) */                                                       \
+    X(Hu10x10, 27, _hu10x10, "hu-10-10")                                       \
+    /* IT (Italian) */                                                         \
+    X(It10x11, 28, _it10x11, "it-10-11")                                       \
+    /* NL (Dutch) */                                                           \
+    X(Nl10x11, 29, _nl10x11, "nl-10-11")                                       \
+    /* RO (Romanian) */                                                        \
+    X(Ro10x11, 30, _ro10x11, "ro-10-11")                                       \
+    /* RU (Russian) */                                                         \
+    X(Ru10x11, 31, _ru10x11, "ru-10-11")                                       \
+    /* SE (Swedish) */                                                         \
+    X(Se10x11, 32, _se10x11, "se-10-11")                                       \
+    /* TR (Turkish) */                                                         \
+    X(Tr10x11, 33, _tr10x11, "tr-10-11")                                       \
+    /* ZH (Chinese 中文) */                                                     \
+    X(Zh10x11, 34, _zh10x11, "zh-10-11")
+
+struct MqttData {
+    bool state;
+    char serverAdress[PAYLOAD_LENGTH];
+    char user[PAYLOAD_LENGTH];
+    char password[PAYLOAD_LENGTH];
+    char clientId[PAYLOAD_LENGTH];
+    char topic[PAYLOAD_LENGTH];
+    uint16_t port;
+};
+
+enum class WhiteType : uint8_t {
+    WarmWhite = 0,
+    NeutralWhite = 1,
+    ColdWhite = 2,
+};
+
+inline bool whiteTypeIsValid(uint32_t type) {
+    return type <= static_cast<uint32_t>(WhiteType::ColdWhite);
+}
+
+constexpr uint8_t MINUTE_LEDS_WIRED_4 = 4;
+constexpr uint8_t MINUTE_LEDS_WIRED_7 = 7;
+
+inline bool minuteLedCountIsValid(uint32_t count) {
+    return count == MINUTE_LEDS_WIRED_4 || count == MINUTE_LEDS_WIRED_7;
+}
+
+struct Birthday {
+    uint8_t day;
+    uint8_t month;
+};
+
+constexpr uint8_t FIRE_COOLING_MIN = 20;
+constexpr uint8_t FIRE_COOLING_MAX = 120;
+constexpr uint8_t FIRE_COOLING_DEFAULT = 65;
+constexpr uint8_t FIRE_SPARKING_MIN = 40;
+constexpr uint8_t FIRE_SPARKING_MAX = 220;
+constexpr uint8_t FIRE_SPARKING_DEFAULT = 120;
+
+inline bool fireSettingsAreValid(uint8_t cooling, uint8_t sparking) {
+    return (cooling >= FIRE_COOLING_MIN) && (cooling <= FIRE_COOLING_MAX) &&
+           (sparking >= FIRE_SPARKING_MIN) && (sparking <= FIRE_SPARKING_MAX);
+}
+
+constexpr uint8_t EFFECT_SPEED_MIN = 1;
+constexpr uint8_t EFFECT_SPEED_MAX = 10;
+constexpr uint8_t EFFECT_SPEED_DEFAULT = 5;
+
+inline bool effectSpeedIsValid(uint32_t speed) {
+    return (speed >= EFFECT_SPEED_MIN) && (speed <= EFFECT_SPEED_MAX);
+}
+
+inline uint16_t effectSpeedIntervalMillis(uint8_t speed) {
+    uint8_t clamped = speed;
+    if (clamped < EFFECT_SPEED_MIN) {
+        clamped = EFFECT_SPEED_MIN;
+    } else if (clamped > EFFECT_SPEED_MAX) {
+        clamped = EFFECT_SPEED_MAX;
+    }
+    return static_cast<uint16_t>((EFFECT_SPEED_MAX + 1u - clamped) * 30u);
+}
+
+constexpr uint8_t HARDWARE_PIN_DISABLED = UINT8_MAX;
+
+struct HardwarePins {
+    uint8_t led;
+    uint8_t powerButton;
+    uint8_t modeButton;
+    uint8_t speedButton;
+};
+
+struct OpenWeatherMapData {
+    char apikey[35];
+    char cityid[9];
+};
+
+enum class BuildTypeDef : uint8_t {
+    Normal = 0,
+    DoubleResM1 = 1,
+    DoubleRes = 2,
+    TrippleRes = 3,
+    QuadRes = 4,
+};
+
+inline bool buildTypeIsValid(uint32_t type) {
+    return type <= static_cast<uint32_t>(BuildTypeDef::QuadRes);
+}
+
+inline uint8_t getLedsPerLetter(BuildTypeDef buildTypeDef) {
+    switch (buildTypeDef) {
+    case BuildTypeDef::DoubleRes:
+        return 2;
+    case BuildTypeDef::TrippleRes:
+        return 3;
+    case BuildTypeDef::QuadRes:
+        return 4;
+    default:
+        return 1;
+    }
+}
+
+enum class MinuteVariant : uint8_t {
+    Off = 0,
+    LED4x = 1,
+    LED7x = 2,
+    InWords = 3,
+};
+
+inline bool minuteVariantIsValid(uint32_t variant) {
+    return variant <= static_cast<uint32_t>(MinuteVariant::InWords);
+}
+
+inline uint8_t minuteLedCountFor(MinuteVariant variant, uint8_t current) {
+    switch (variant) {
+    case MinuteVariant::LED4x:
+        return MINUTE_LEDS_WIRED_4;
+    case MinuteVariant::LED7x:
+        return MINUTE_LEDS_WIRED_7;
+    default:
+        return current;
+    }
+}
+
+enum class SecondVariant : uint8_t {
+    Off = 0,
+    FrameDot = 1,
+    FrameSector = 2,
+    FrameSectorToggle = 3,
+};
+
+inline bool secondVariantIsValid(uint32_t variant) {
+    return variant <= static_cast<uint32_t>(SecondVariant::FrameSectorToggle);
+}
+
+enum class WordclockChanges : uint8_t {
+    Null,
+    Parameters,
+    Minute,
+    Words,
+};
+
+enum class ItIsVariant : uint8_t {
+    Permanent = 0,
+    Quarterly = 1,
+    HalfHourly = 2,
+    Hourly = 3,
+    Off = 4,
+};
+
+inline bool itIsVariantIsValid(uint32_t variant) {
+    return variant <= static_cast<uint32_t>(ItIsVariant::Off);
+}
+
+enum BitmapSymbol : uint8_t {
+    WLAN100,
+    FIRE_1,
+    FIRE_2,
+    FIRE_3,
+    FIRE_4,
+    FIRE_5,
+    FIRE_6,
+    HEART,
+    SMILEY,
+    NOTE,
+    SNOW,
+    MAIL,
+    BELL,
+    STOP,
+    STBY,
+    MAX_BITMAP_SYMBOLS
+};
+
+enum ColorPosition : uint8_t {
+    Foreground = 0,
+    Background = 1,
+    Frame = 2,
+    GradientEnd = 3,
+    ColorPositionCount = 4,
+};
+
+struct GLOBAL {
+    uint16_t sernr;
+    uint16_t prog;
+    uint8_t param1;
+    bool progInit;
+    uint16_t conf;
+    HsbColor color[ColorPositionCount];
+    uint8_t effectBri;
+    uint8_t effectSpeed;
+    uint8_t client_nr;
+    SecondVariant secondVariant;
+    uint8_t secondsFrameLedCount;
+    MinuteVariant minuteVariant;
+    ItIsVariant itIsVariant;
+    bool languageVariant[5];
+    bool layoutVariant[6];
+    char timeserver[PAYLOAD_LENGTH];
+    char hostname[PAYLOAD_LENGTH];
+    char scrollingText[PAYLOAD_LENGTH];
+
+    uint8_t h6;
+    uint8_t h8;
+    uint8_t h12;
+    uint8_t h16;
+    uint8_t h18;
+    uint8_t h20;
+    uint8_t h22;
+    uint8_t h24;
+
+    uint8_t clockTypeDef;
+    BuildTypeDef buildTypeDef;
+    uint8_t Colortype;
+    WhiteType wType;
+    BitmapSymbol bitmapSymbol;
+
+    MqttData mqtt;
+
+    OpenWeatherMapData openWeatherMap;
+
+    uint8_t autoBrightEnabled;
+    uint8_t autoBrightMin;
+    uint8_t autoBrightMax;
+    uint16_t autoBrightPeak;
+    uint8_t transitionType;
+    uint8_t transitionDuration;
+    uint8_t colorize;
+    uint8_t transitionDemo;
+
+    bool bootLedBlink;
+    bool bootLedSweep;
+    bool bootShowWifi;
+    bool bootShowIP;
+
+    Birthday birthday[MAX_BIRTHDAY_COUNT];
+
+    HardwarePins hardwarePins;
+    char timezone[PAYLOAD_LENGTH];
+    uint8_t i2cSdaPin;
+    uint8_t i2cSclPin;
+    uint8_t fireCooling;
+    uint8_t fireSparking;
+    uint8_t minuteLedCount;
+
+    /* QWeather (和风天气) settings. Appended after every existing field on
+     * purpose: the configuration is stored as a raw dump of this struct, so
+     * inserting a field anywhere else would shift all following settings and
+     * silently break a word clock that was already configured. An EEPROM image
+     * from an older firmware therefore leaves these bytes at 0xFF; setup()
+     * clears them. */
+    char qweatherLocation[12]; // nine digit location id plus terminator
+    char qweatherHost[41];     // <account>.re.qweatherapi.com
+
+    /* Open-Meteo (free, no key, city name only). Appended for the same reason
+     * as the fields above - never insert in the middle of this struct.
+     *
+     * `weatherSource` selects which of the two services is queried:
+     *   0 = Open-Meteo   (city name, no key)
+     *   1 = QWeather     (API host + key + location id)
+     * The coordinates are the cached result of the geocoding lookup, so the
+     * regular refresh is a single request and the city name is only resolved
+     * again when it is changed. */
+    uint8_t weatherSource;
+    char cityName[40]; // UTF-8, up to 13 Chinese characters
+    float latitude;
+    float longitude;
+};
+extern GLOBAL G;
+
+// Brightness related variables
+extern float ledGain;
+extern bool bh1750Initialized;
+extern bool autoBrightUsingBH1750;
+
+extern uint8_t _second;
+extern uint8_t _secondFrame;
+extern uint8_t _minute;
+extern uint8_t _hour;
+/* Day of the week from tm_wday (0 = Sunday). Only used by the Chinese
+ * layouts to light 星期一..星期日. */
+extern uint8_t _weekday;
+extern uint8_t lastSecond;
+extern uint8_t lastMinute;
+
+extern uint32_t frontMatrix[MAX_ROW_SIZE];
+extern uint32_t lastFrontMatrix[MAX_ROW_SIZE];
+
+/*
+ * Which word lit each cell, as a FrontWord cast to uint8_t. Filled by
+ * ClockType::setFrontMatrixPixel() while a word is being drawn, so consumers
+ * (colorization) know word boundaries instead of having to guess them from
+ * runs of lit cells - which fails for words that are not laid out
+ * horizontally.
+ *
+ * Indexed in display coordinates, i.e. the same [row][col] that
+ * getFrontMatrixPixel() uses, NOT the bit position that setFrontMatrixPixel()
+ * takes.
+ */
+constexpr uint8_t WORD_ID_NONE = 0; // == FrontWord::error
+extern uint8_t frontWordId[MAX_ROW_SIZE][MAX_COL_SIZE];
+extern uint8_t minuteArray; /* Using a byte as a per bit array */
+extern uint8_t lastMinuteArray;
+extern uint16_t minutePixelArray[4];
+constexpr uint8_t MAX_SECONDS_FRAME_LED_COUNT = 200;
+extern bool frameArray[MAX_SECONDS_FRAME_LED_COUNT];
+extern bool parametersChanged;
+extern bool colorChangedByWebsite;
+extern bool webStateChanged;
+extern uint8_t i2cScanSdaPin;
+extern uint8_t i2cScanSclPin;
+
+extern bool externalRTC;
+
+enum LedColorVariants : uint8_t {
+    Brg = 0,
+    Grb = 1,
+    Rgb = 2,
+    Rbg = 3,
+    Bgr = 4,
+    Grbw = 5,
+};
+
+inline bool colorTypeIsValid(uint32_t type) { return type <= Grbw; }
+
+enum LanguageDialects : uint8_t {
+    ItIs15 = 0,
+    ItIs20 = 1,
+    ItIs40 = 2,
+    ItIs45 = 3,
+    EN_ShowAQuarter = 4,
+};
+
+enum LayoutVariants : uint8_t {
+    ReverseMinDirection = 0,
+    MirrorVertical = 1,
+    MirrorHorizontal = 2,
+    FlipHorzVert = 3,
+    ExtraLedPerRow = 4,
+    MeanderRows = 5,
+};
+
+inline uint8_t mirroredRow(uint8_t row, uint8_t rows) {
+    return G.layoutVariant[MirrorHorizontal] ? rows - 1 - row : row;
+}
+
+inline uint8_t mirroredCol(uint8_t col, uint8_t cols) {
+    return G.layoutVariant[MirrorVertical] ? cols - 1 - col : col;
+}
+
+enum CommandWords : uint8_t {
+    COMMAND_IDLE = 0,
+
+    COMMAND_MODE_WORD_CLOCK = 1,
+    COMMAND_MODE_SECONDS = 2,
+    COMMAND_MODE_SCROLLINGTEXT = 3,
+    COMMAND_MODE_RAINBOWCYCLE = 4,
+    COMMAND_MODE_RAINBOW = 5,
+    COMMAND_MODE_COLOR = 6,
+    COMMAND_MODE_DIGITAL_CLOCK = 7,
+    COMMAND_MODE_SYMBOL = 8,
+    COMMAND_MODE_FIRE = 9,
+    COMMAND_MODE_TRANSITION = 10,
+
+    PLACEHOLDER_MAX_MODE = 19,
+
+    COMMAND_SET_INITIAL_VALUES = 20,
+    COMMAND_SET_TIME = 30,
+
+    COMMAND_SET_BIRTHDAYS = 83,
+    COMMAND_SET_LANGUAGE_VARIANT = 84,
+    COMMAND_SET_MQTT = 85,
+    COMMAND_SET_TIME_MANUAL = 86,
+    COMMAND_SET_BUILDTYPE = 87,
+    COMMAND_SET_COLORTYPE = 88,
+    COMMAND_SET_CLOCK_TYPE = 89,
+    COMMAND_SET_WEATHER_DATA = 90,
+    COMMAND_SET_WHITETYPE = 91,
+    COMMAND_SET_HOSTNAME = 92,
+    COMMAND_SET_SETTING_SECOND = 93,
+    COMMAND_SET_MINUTE = 94,
+    COMMAND_SET_BRIGHTNESS = 95,
+    COMMAND_SET_SCROLLINGTEXT = 96,
+    COMMAND_SET_TIMESERVER = 97,
+    COMMAND_SET_WIFI_DISABLED = 98,
+    COMMAND_SET_WIFI_AND_RESTART = 99,
+    COMMAND_RESET = 100,
+    COMMAND_SET_BOOT = 101,
+    COMMAND_SET_AUTO_BRIGHT = 102,
+    COMMAND_SET_LAYOUT_VARIANT = 103,
+    COMMAND_SET_MQTT_HA_DISCOVERY = 104,
+    COMMAND_SET_SYMBOL = 105,
+    COMMAND_SET_IT_IS_VARIANT = 106,
+    COMMAND_SET_HARDWARE_PINS = 107,
+    COMMAND_SET_TIMEZONE = 108,
+    COMMAND_SET_COLORIZE = 109,
+    COMMAND_SET_SECONDS_FRAME = 110,
+    COMMAND_SET_FIRE = 111,
+
+    COMMAND_SPEED = 152,
+
+    PLACEHOLDER_MAX_SET = 199,
+
+    COMMAND_REQUEST_CONFIG_VALUES = 200,
+    COMMAND_REQUEST_COLOR_VALUES = 201,
+    COMMAND_REQUEST_AUTO_BRIGHT = 203,
+    COMMAND_REQUEST_TRANSITION = 204,
+    COMMAND_REQUEST_MQTT_VALUES = 205,
+    COMMAND_REQUEST_BIRTHDAYS = 206,
+    COMMAND_REQUEST_I2C_SCAN = 207,
+
+    PLACEHOLDER_MAX_REQUEST = 255,
+};
+
+/*
+ * Handling COMMAND_MODE_WORD_CLOCK leaves G.prog on COMMAND_IDLE, so idle is
+ * the steady state of the word clock rather than "nothing running". Everything
+ * that is only meaningful for the clock face has to ask for both.
+ *
+ * COMMAND_MODE_TRANSITION only carries new transition settings and falls
+ * straight through to COMMAND_MODE_WORD_CLOCK in the clock work; the front
+ * matrix keeps holding a clock face throughout, so it counts as well.
+ */
+inline bool isWordClockMode(uint8_t prog) {
+    return (prog == COMMAND_IDLE) || (prog == COMMAND_MODE_WORD_CLOCK) ||
+           (prog == COMMAND_MODE_TRANSITION);
+}
+
+inline bool isValidModeCommand(uint16_t command) {
+    switch (command) {
+    case COMMAND_IDLE:
+    case COMMAND_MODE_WORD_CLOCK:
+    case COMMAND_MODE_SECONDS:
+    case COMMAND_MODE_SCROLLINGTEXT:
+    case COMMAND_MODE_RAINBOWCYCLE:
+    case COMMAND_MODE_RAINBOW:
+    case COMMAND_MODE_COLOR:
+    case COMMAND_MODE_DIGITAL_CLOCK:
+    case COMMAND_MODE_SYMBOL:
+    case COMMAND_MODE_FIRE:
+    case COMMAND_MODE_TRANSITION:
+        return true;
+    default:
+        return false;
+    }
+}
+
+enum ClockTypeDef : uint8_t {
+#define X(name, id, var, i18n) name = id,
+    CLOCK_TYPES_LIST
+#undef X
+};
+
+inline bool isValidClockTypeDef(uint8_t type) {
+    switch (type) {
+#define X(name, id, var, i18n) case id:
+        CLOCK_TYPES_LIST
+#undef X
+        return true;
+    default:
+        return false;
+    }
+}

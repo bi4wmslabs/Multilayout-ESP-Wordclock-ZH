@@ -1,0 +1,1089 @@
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#ifdef ESP8266
+#include <ESP8266HTTPUpdateServer.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <coredecls.h>
+#include <sntp.h>
+#elif defined(ESP32)
+#include <ESPmDNS.h>
+#include <HTTPUpdateServer.h>
+#include <Update.h>
+#include <WebServer.h>
+#include <WiFi.h>
+#include <esp_sntp.h>
+#endif
+
+#include "Config.h"
+
+#include "WordClock.h"
+#include <NeoPixelBus.h>
+#include <RTClib.h>
+#include <WiFiClient.h>
+#include <WiFiUdp.h>
+
+#include "WordClockState.h"
+
+#include "ClockType.gen.h"
+#include "WebPageAdapter.h"
+
+#include "EEPROMAnything.h"
+
+ClockType *usedClockType = nullptr;
+
+#include "LedStripInterface.h"
+#include "NeoPixelBusLedStripAdapter.h"
+
+WiFiClient client;
+
+//--OTA--
+#ifdef ESP8266
+ESP8266WebServer httpServer(81);
+ESP8266HTTPUpdateServer httpUpdater;
+#elif defined(ESP32)
+WebServer httpServer(81);
+HTTPUpdateServer httpUpdater;
+#endif
+//--OTA--
+
+// Timezone from
+// https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv
+const char TZ_Europe_Berlin[] = "CET-1CEST,M3.5.0,M10.5.0/3";
+
+RTC_Type RTC;
+
+#include "ClockWork.h"
+#include "Frame.h"
+#include "I2CBus.h"
+#include "Led.h"
+#include "Mqtt.h"
+#include "Network.h"
+#include "PortalSettings.h"
+#include "Render/ColorStage.h"
+#include "Render/RenderPipeline.h"
+#include "WifiHelper.h"
+
+SecondsFrame *secondsFrame;
+Led led;
+ColorStage colorStage;
+RenderPipeline renderPipeline;
+ClockWork clockWork;
+Mqtt mqtt(clockWork);
+Network network;
+
+void setDefaultHardwarePins();
+bool hardwarePinsAreValid();
+void ensureI2CPins();
+void ensureTimezone();
+void ensureTransitionType();
+void ensureFireSettings();
+void ensureEffectSpeed();
+void ensureMinuteVariant();
+void ensureWhiteType();
+void ensureMinuteLedCount();
+void ensureWeatherData();
+
+LedStripInterface *activeLedStrip = nullptr;
+
+void deleteActiveLedStrip() {
+    delete activeLedStrip;
+    activeLedStrip = nullptr;
+}
+
+#include "ClockWork.hpp"
+#include "Render/ColorStage.hpp"
+#include "Symbols.h"
+#include "Transitions/Transition.hpp"
+
+#include "Render/RenderPipeline.hpp"
+
+namespace {
+/* 512 bytes were enough for the configuration alone, but the Open-Meteo
+ * settings (city name plus the cached coordinates) pushed it over. The size is
+ * kept as small as possible: the emulated EEPROM holds a RAM copy, and every
+ * byte here is heap the TLS session cannot use. 768 leaves ~220 bytes of room
+ * for future fields in a single 4 kB flash sector. */
+constexpr uint16_t EEPROM_SIZE = 768;
+constexpr uint16_t POWER_CYCLE_COUNT_ADDRESS = EEPROM_SIZE - 1;
+constexpr uint8_t POWER_CYCLE_RESET_LIMIT = 5;
+constexpr uint8_t CAPTIVE_PORTAL_POWER_CYCLE_COUNT = 3;
+constexpr uint8_t FACTORY_RESET_POWER_CYCLE_COUNT = 6;
+
+#ifdef ESP8266
+constexpr uint8_t MAX_HARDWARE_PIN = 16;
+#else
+constexpr uint8_t MAX_HARDWARE_PIN = 39;
+#endif
+} // namespace
+
+/* The struct is dumped as one block, so it must end before the byte that keeps
+ * the power cycle counter, otherwise every save would overwrite it. */
+static_assert(sizeof(G) <= POWER_CYCLE_COUNT_ADDRESS,
+              "Configuration data would overwrite the power cycle counter");
+
+uint16_t powerCycleCount = 0; // Variable to store power cycle count
+
+//------------------------------------------------------------------------------
+
+#if defined(ESP32)
+void time_is_set(struct timeval *tv) {
+    const time_t utc = tv != nullptr ? tv->tv_sec : time(nullptr);
+#else
+void time_is_set() {
+    const time_t utc = time(nullptr);
+#endif
+    if (externalRTC) {
+        RTC.adjust(DateTime(utc));
+    }
+
+    struct tm tm;
+    localtime_r(&utc, &tm);
+
+    String origin = sntp_getservername(0);
+    if (origin.isEmpty()) {
+        const ip_addr_t *ip_addr = sntp_getserver(0);
+
+        if (ip_addr != nullptr) {
+#ifdef ESP8266
+            origin = IPAddress(ip_addr->addr).toString();
+#elif defined(ESP32)
+            origin = IPAddress(ip_addr->u_addr.ip4.addr).toString();
+#endif
+        } else {
+            origin = "SNTP";
+        }
+    }
+    Serial.printf("Set new time: %02d:%02d:%02d (%s)\n", tm.tm_hour, tm.tm_min,
+                  tm.tm_sec, origin.c_str());
+
+    // Calc second frame for seconds variants that use a frame
+    uint16_t numPixels = usedClockType->numPixelsFrameMatrix();
+    if (numPixels != 0) {
+        _secondFrame = (tm.tm_sec * numPixels) / 60;
+    }
+
+    G.progInit = true;
+    parametersChanged = true;
+}
+
+//------------------------------------------------------------------------------
+
+void incrementPowerCycleCount() {
+    if (powerCycleCount > POWER_CYCLE_RESET_LIMIT) {
+        powerCycleCount = 0;
+    }
+    powerCycleCount++;
+    EEPROM.write(POWER_CYCLE_COUNT_ADDRESS, powerCycleCount);
+    EEPROM.commit();
+}
+
+//------------------------------------------------------------------------------
+
+void sendMQTTUpdate() {
+    // send status update via MQTT
+    if ((G.mqtt.state) && (WiFi.status() == WL_CONNECTED)) {
+        mqtt.sendState();
+    }
+}
+
+//------------------------------------------------------------------------------
+
+void setDefaultHardwarePins() {
+    G.hardwarePins.led = LED_PIN;
+    G.hardwarePins.powerButton = POWER_BUTTON_PIN;
+    G.hardwarePins.modeButton = MODE_BUTTON_PIN;
+    G.hardwarePins.speedButton = SPEED_BUTTON_PIN;
+}
+
+//------------------------------------------------------------------------------
+
+bool isHardwarePinInRange(uint8_t pin) { return pin <= MAX_HARDWARE_PIN; }
+
+//------------------------------------------------------------------------------
+
+bool allHardwarePinsAreInRange() {
+    if (!isHardwarePinInRange(G.hardwarePins.led)) {
+        return false;
+    }
+
+    const uint8_t buttonPins[] = {
+        G.hardwarePins.powerButton,
+        G.hardwarePins.modeButton,
+        G.hardwarePins.speedButton,
+    };
+    const uint8_t pinCount = sizeof(buttonPins) / sizeof(buttonPins[0]);
+
+    for (uint8_t i = 0; i < pinCount; i++) {
+        if (buttonPins[i] != HARDWARE_PIN_DISABLED &&
+            !isHardwarePinInRange(buttonPins[i])) {
+            return false;
+        }
+    }
+    return i2cBus::pinsAreValid(G.i2cSdaPin, G.i2cSclPin);
+}
+
+//------------------------------------------------------------------------------
+
+bool hasDuplicateHardwarePins() {
+    const uint8_t pins[] = {
+        G.hardwarePins.led,
+        G.hardwarePins.powerButton,
+        G.hardwarePins.modeButton,
+        G.hardwarePins.speedButton,
+        G.i2cSdaPin,
+        G.i2cSclPin,
+    };
+    const uint8_t pinCount = sizeof(pins) / sizeof(pins[0]);
+
+    for (uint8_t i = 0; i < pinCount; i++) {
+        for (uint8_t j = i + 1; j < pinCount; j++) {
+            if (pins[i] != HARDWARE_PIN_DISABLED && pins[i] == pins[j]) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+//------------------------------------------------------------------------------
+
+bool hardwarePinsAreValid() {
+    return allHardwarePinsAreInRange() && !hasDuplicateHardwarePins();
+}
+
+//------------------------------------------------------------------------------
+
+bool timezoneIsValid() {
+    for (uint8_t i = 0; i < sizeof(G.timezone); i++) {
+        const char c = G.timezone[i];
+        if (c == '\0') {
+            return i > 0;
+        }
+        if (c < 33 || c > 126) {
+            return false;
+        }
+    }
+    return false;
+}
+
+//------------------------------------------------------------------------------
+
+void ensureTimezone() {
+    if (!timezoneIsValid()) {
+        strlcpy(G.timezone, TZ_Europe_Berlin, sizeof(G.timezone));
+    }
+}
+
+//------------------------------------------------------------------------------
+
+void applyTimezone() {
+    ensureTimezone();
+    setenv("TZ", G.timezone, true);
+    tzset();
+}
+
+//------------------------------------------------------------------------------
+
+void ensureHardwarePins() {
+    if (hardwarePinsAreValid()) {
+        return;
+    }
+
+    Serial.println("Invalid hardware pins in EEPROM, restoring defaults");
+    setDefaultHardwarePins();
+    eeprom::write();
+}
+
+//------------------------------------------------------------------------------
+
+void ensureI2CPins() {
+    if (i2cBus::pinsAreValid(G.i2cSdaPin, G.i2cSclPin)) {
+        return;
+    }
+
+    Serial.println("Invalid I2C pins in EEPROM, restoring defaults");
+    i2cBus::setDefaultPins(G.i2cSdaPin, G.i2cSclPin);
+}
+
+//------------------------------------------------------------------------------
+
+/*
+COLORED (12) was removed as a transition type: colouring is a mode of its own
+now and no longer needs a transition. A configuration written by an older build
+can still hold it, so a stored value is checked once at boot rather than in
+every frame.
+*/
+
+void ensureTransitionType() {
+    if (isValidTransitionType(G.transitionType)) {
+        return;
+    }
+
+    Serial.printf(
+        "Invalid transition type %u in EEPROM, disabling transition\n",
+        G.transitionType);
+    G.transitionType = NO_TRANSITION;
+}
+
+//------------------------------------------------------------------------------
+
+void ensureEffectSpeed() {
+    if (effectSpeedIsValid(G.effectSpeed)) {
+        return;
+    }
+
+    Serial.printf("Invalid effect speed %u in EEPROM, restoring default\n",
+                  G.effectSpeed);
+    G.effectSpeed = EFFECT_SPEED_DEFAULT;
+}
+
+//------------------------------------------------------------------------------
+
+void ensureFireSettings() {
+    if (fireSettingsAreValid(G.fireCooling, G.fireSparking)) {
+        return;
+    }
+
+    Serial.println("Invalid fire settings in EEPROM, restoring defaults");
+    G.fireCooling = FIRE_COOLING_DEFAULT;
+    G.fireSparking = FIRE_SPARKING_DEFAULT;
+}
+
+//------------------------------------------------------------------------------
+
+MinuteVariant defaultMinuteVariant() {
+#if defined(MINUTE_LED7x)
+    return MinuteVariant::LED7x;
+#elif defined(MINUTE_LED4x)
+    return MinuteVariant::LED4x;
+#else
+    return MinuteVariant::Off;
+#endif
+}
+
+//------------------------------------------------------------------------------
+
+ItIsVariant defaultItIsVariant() {
+#if defined(IT_IS_Off)
+    return ItIsVariant::Off;
+#elif defined(IT_IS_Permanent)
+    return ItIsVariant::Permanent;
+#elif defined(IT_IS_Quarterly)
+    return ItIsVariant::Quarterly;
+#elif defined(IT_IS_HalfHourly)
+    return ItIsVariant::HalfHourly;
+#elif defined(IT_IS_Hourly)
+    return ItIsVariant::Hourly;
+#else
+    return ItIsVariant::Permanent;
+#endif
+}
+
+//------------------------------------------------------------------------------
+
+void ensureMinuteVariant() {
+    constexpr uint8_t LEGACY_MINUTE_VARIANT_IN_WORDS = 4;
+
+    if (static_cast<uint8_t>(G.minuteVariant) ==
+        LEGACY_MINUTE_VARIANT_IN_WORDS) {
+        Serial.println("Moving minute variant InWords from 4 to 3");
+        G.minuteVariant = MinuteVariant::InWords;
+        return;
+    }
+
+    if (minuteVariantIsValid(static_cast<uint32_t>(G.minuteVariant))) {
+        return;
+    }
+
+    Serial.printf("Invalid minute variant %u in EEPROM, restoring default\n",
+                  static_cast<unsigned>(G.minuteVariant));
+    G.minuteVariant = defaultMinuteVariant();
+}
+
+//------------------------------------------------------------------------------
+
+void ensureSecondVariant() {
+    if (secondVariantIsValid(static_cast<uint32_t>(G.secondVariant))) {
+        return;
+    }
+
+    Serial.printf("Invalid second variant %u in EEPROM, disabling seconds\n",
+                  static_cast<unsigned>(G.secondVariant));
+    G.secondVariant = SecondVariant::Off;
+}
+
+//------------------------------------------------------------------------------
+
+void ensureItIsVariant() {
+    if (itIsVariantIsValid(static_cast<uint32_t>(G.itIsVariant))) {
+        return;
+    }
+
+    Serial.printf("Invalid it-is variant %u in EEPROM, restoring default\n",
+                  static_cast<unsigned>(G.itIsVariant));
+    G.itIsVariant = defaultItIsVariant();
+}
+
+//------------------------------------------------------------------------------
+
+void ensureColorType() {
+    if (colorTypeIsValid(G.Colortype)) {
+        return;
+    }
+
+    Serial.printf("Invalid color type %u in EEPROM, restoring default\n",
+                  G.Colortype);
+    G.Colortype = DEFAULT_LEDTYPE;
+}
+
+//------------------------------------------------------------------------------
+
+void ensureBuildType() {
+    if (buildTypeIsValid(static_cast<uint32_t>(G.buildTypeDef))) {
+        return;
+    }
+
+    Serial.printf("Invalid build type %u in EEPROM, restoring default\n",
+                  static_cast<unsigned>(G.buildTypeDef));
+    G.buildTypeDef = DEFAULT_BUILDTYPE;
+}
+
+//------------------------------------------------------------------------------
+
+void ensureWhiteType() {
+    if (whiteTypeIsValid(static_cast<uint32_t>(G.wType))) {
+        return;
+    }
+
+    Serial.printf("Invalid white type %u in EEPROM, restoring default\n",
+                  static_cast<unsigned>(G.wType));
+    G.wType = WHITE_LEDTYPE;
+}
+
+//------------------------------------------------------------------------------
+
+void ensureMinuteLedCount() {
+    if (minuteLedCountIsValid(G.minuteLedCount)) {
+        return;
+    }
+
+    G.minuteLedCount = minuteLedCountFor(G.minuteVariant, MINUTE_LEDS_WIRED_4);
+    Serial.printf("Invalid minute LED count in EEPROM, deriving %u from the "
+                  "minute variant\n",
+                  G.minuteLedCount);
+}
+
+//------------------------------------------------------------------------------
+
+namespace {
+
+/* The QWeather fields were appended to the very end of GLOBAL. An EEPROM
+ * written by an older firmware therefore leaves them as erased flash (0xFF)
+ * instead of empty strings, which would make the request builder walk past a
+ * missing terminator. Anything that is not printable ASCII is dropped. */
+bool isPrintableConfigString(const char *value, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        const char c = value[i];
+        if (c == '\0') {
+            return true;
+        }
+        if (c < 0x20 || c > 0x7E) {
+            return false;
+        }
+    }
+    return false;
+}
+
+/* Same idea for the city name, which is UTF-8: the bytes above 0x7F are
+ * expected here, but control characters and the erased-flash value 0xFF are
+ * not - a field that was never written consists of 0xFF only. */
+bool isPrintableUtf8(const char *value, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        const unsigned char c = static_cast<unsigned char>(value[i]);
+        if (c == '\0') {
+            return i > 0;
+        }
+        if (c < 0x20 || c == 0x7F || c == 0xFF) {
+            return false;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+//------------------------------------------------------------------------------
+
+void ensureWeatherData() {
+    /* A field that is unreadable or does not look like a host name / location
+     * id is dropped instead of being sent to DNS: a garbage name makes the
+     * lookup block until the watchdog reboots the clock. */
+    if (!isPrintableConfigString(G.qweatherLocation,
+                                 sizeof(G.qweatherLocation)) ||
+        !forecast::qweather::locationIsPlausible(G.qweatherLocation)) {
+        G.qweatherLocation[0] = '\0';
+    }
+    if (!isPrintableConfigString(G.qweatherHost, sizeof(G.qweatherHost)) ||
+        !forecast::qweather::hostIsPlausible(G.qweatherHost)) {
+        G.qweatherHost[0] = '\0';
+    }
+    if (!isPrintableConfigString(G.openWeatherMap.apikey,
+                                 sizeof(G.openWeatherMap.apikey))) {
+        G.openWeatherMap.apikey[0] = '\0';
+    }
+
+    /* Open-Meteo: city name and the coordinates cached from the geocoding
+     * lookup. Erased flash (0xFF) is not a valid UTF-8 city name, and a
+     * coordinate of 0/0 is in the Atlantic - both mean "not resolved yet". */
+    if (!isPrintableUtf8(G.cityName, sizeof(G.cityName))) {
+        G.cityName[0] = '\0';
+    }
+    if (!(G.latitude >= -90.0f && G.latitude <= 90.0f) ||
+        !(G.longitude >= -180.0f && G.longitude <= 180.0f) ||
+        (G.latitude == 0.0f && G.longitude == 0.0f)) {
+        G.latitude = 0;
+        G.longitude = 0;
+    }
+
+    /* Anything above 1 is erased flash (0xFF) or a corrupt value. A clock that
+     * was already running with QWeather keeps using it after the update;
+     * everything else starts with the keyless source. */
+    if (G.weatherSource > 1) {
+        const bool qweatherReady =
+            forecast::qweather::hostIsPlausible(G.qweatherHost) &&
+            forecast::qweather::locationIsPlausible(G.qweatherLocation) &&
+            G.openWeatherMap.apikey[0] != '\0';
+        G.weatherSource = qweatherReady ? 1 : 0;
+    }
+
+#ifdef QWEATHER_LOCATION
+    static_assert(sizeof(QWEATHER_LOCATION) <= sizeof(G.qweatherLocation),
+                  "QWEATHER_LOCATION is too long");
+    if (G.qweatherLocation[0] == '\0') {
+        strlcpy(G.qweatherLocation, QWEATHER_LOCATION,
+                sizeof(G.qweatherLocation));
+        Serial.println("No QWeather location in EEPROM, using Config.h");
+    }
+#endif
+#ifdef QWEATHER_HOST
+    static_assert(sizeof(QWEATHER_HOST) <= sizeof(G.qweatherHost),
+                  "QWEATHER_HOST is too long");
+    if (G.qweatherHost[0] == '\0') {
+        strlcpy(G.qweatherHost, QWEATHER_HOST, sizeof(G.qweatherHost));
+        Serial.println("No QWeather API host in EEPROM, using Config.h");
+    }
+#endif
+#ifdef OWM_API_KEY
+    static_assert(sizeof(OWM_API_KEY) <= sizeof(G.openWeatherMap.apikey),
+                  "OWM_API_KEY is too long");
+    if (G.openWeatherMap.apikey[0] == '\0') {
+        strlcpy(G.openWeatherMap.apikey, OWM_API_KEY,
+                sizeof(G.openWeatherMap.apikey));
+        Serial.println("No API key in EEPROM, using Config.h");
+    }
+#endif
+}
+
+//------------------------------------------------------------------------------
+// Start setup()
+//------------------------------------------------------------------------------
+
+void setup() {
+    //-------------------------------------
+    // Start serial interface if required
+    //-------------------------------------
+#if GENERAL_VERBOSE
+    Serial.begin(115200);
+    delay(20);
+    Serial.println("");
+    Serial.println("--------------------------------------");
+    Serial.println("Begin Setup");
+#ifdef ESP8266
+    /* Printed before anything else so a boot loop can be told apart from a
+     * dead serial connection: if this line never appears, the firmware dies
+     * before setup() runs (or the terminal listens on 74880 baud). */
+    Serial.printf("[boot] reset reason: %s, heap %u\n",
+                  ESP.getResetReason().c_str(),
+                  static_cast<unsigned>(ESP.getFreeHeap()));
+#endif
+    Serial.println("--------------------------------------");
+#endif
+    //-------------------------------------
+    // Read / initialize EEPROM
+    //-------------------------------------
+
+    EEPROM.begin(EEPROM_SIZE);
+    eeprom::read();
+    ensureHardwarePins();
+    ensureI2CPins();
+    ensureTimezone();
+    ensureTransitionType();
+    ensureFireSettings();
+    ensureEffectSpeed();
+    ensureMinuteVariant();
+    ensureSecondVariant();
+    ensureItIsVariant();
+    ensureColorType();
+    ensureBuildType();
+    ensureWhiteType();
+    ensureMinuteLedCount();
+
+    //-------------------------------------
+
+    applyTimezone();
+    network.setPortalHandlers(
+        [](time_t utc) {
+            struct timeval tv;
+            tv.tv_sec = utc;
+            tv.tv_usec = 0;
+            settimeofday(&tv, nullptr);
+            if (externalRTC) {
+                RTC.adjust(DateTime(utc));
+            }
+        },
+        portalSettings::render, portalSettings::apply);
+
+    // Read the power cycle count from EEPROM
+    powerCycleCount = EEPROM.read(POWER_CYCLE_COUNT_ADDRESS);
+    incrementPowerCycleCount();
+    Serial.print("Power cycle count: ");
+    Serial.println(powerCycleCount);
+    if (powerCycleCount == CAPTIVE_PORTAL_POWER_CYCLE_COUNT) {
+        Serial.println("Enable captive portal");
+        network.startConfigPortal();
+    } else if (powerCycleCount == FACTORY_RESET_POWER_CYCLE_COUNT) {
+        G.sernr++;
+        Serial.println("Reset to initial values");
+    }
+
+    //-------------------------------------
+
+    if (G.sernr != SERNR) {
+        for (uint16_t i = 0; i < EEPROM_SIZE; i++) {
+            EEPROM.write(i, i);
+        }
+        EEPROM.commit();
+
+        G.sernr = SERNR;
+        G.prog = COMMAND_MODE_WORD_CLOCK;
+        G.param1 = 0;
+        G.progInit = true;
+        G.conf = COMMAND_IDLE;
+        for (uint8_t i = 0; i < ColorPositionCount; i++) {
+            G.color[i] = {0, 0, 0};
+        }
+        G.color[Foreground] = HsbColor(DEFAULT_HUE / 360.f, 1.f, 0.5f);
+        // Second gradient colour: a third of the colour circle further on, so
+        // the default gradient is visible without configuring anything.
+        G.color[GradientEnd] =
+            HsbColor(fmodf(DEFAULT_HUE / 360.f + 0.33f, 1.f), 1.f, 0.5f);
+        G.effectBri = 2;
+        G.effectSpeed = EFFECT_SPEED_DEFAULT;
+        G.fireCooling = FIRE_COOLING_DEFAULT;
+        G.fireSparking = FIRE_SPARKING_DEFAULT;
+        G.client_nr = 0;
+        G.secondVariant = SecondVariant::Off;
+        G.secondsFrameLedCount = 0;
+        G.bitmapSymbol = BitmapSymbol::HEART;
+        G.minuteVariant = defaultMinuteVariant();
+        G.minuteLedCount =
+            minuteLedCountFor(G.minuteVariant, MINUTE_LEDS_WIRED_4);
+        strcpy(G.openWeatherMap.cityid, "");
+        strcpy(G.openWeatherMap.apikey, "");
+        strcpy(G.timeserver, "europe.pool.ntp.org");
+        strlcpy(G.timezone, TZ_Europe_Berlin, sizeof(G.timezone));
+        strcpy(G.hostname, "ESPWordclock");
+        strcpy(G.scrollingText, "HELLO WORLD ");
+
+        G.h6 = DEFAULT_BRIGHTNESS;
+        G.h8 = DEFAULT_BRIGHTNESS;
+        G.h12 = DEFAULT_BRIGHTNESS;
+        G.h16 = DEFAULT_BRIGHTNESS;
+        G.h18 = DEFAULT_BRIGHTNESS;
+        G.h20 = DEFAULT_BRIGHTNESS;
+        G.h22 = DEFAULT_BRIGHTNESS;
+        G.h24 = DEFAULT_BRIGHTNESS;
+        G.layoutVariant[ReverseMinDirection] = REVERSE_MINUTE_DIR;
+        G.layoutVariant[MirrorVertical] = MIRROR_FRONT_VERTICAL;
+        G.layoutVariant[MirrorHorizontal] = MIRROR_FRONT_HORIZONTAL;
+        G.layoutVariant[FlipHorzVert] = FLIP_HORIZONTAL_VERTICAL;
+        G.layoutVariant[ExtraLedPerRow] = EXTRA_LED_PER_ROW;
+        G.layoutVariant[MeanderRows] = MEANDER_ROWS;
+        G.languageVariant[EN_ShowAQuarter] = false;
+
+        G.itIsVariant = defaultItIsVariant();
+
+#ifdef MQTT_SERVER
+        strlcpy(G.mqtt.serverAdress, MQTT_SERVER, sizeof(G.mqtt.serverAdress));
+        G.mqtt.state = true;
+#else
+        strcpy(G.mqtt.serverAdress, "192.168.4.1");
+        G.mqtt.state = false;
+#endif
+
+#ifdef MQTT_PORT
+        G.mqtt.port = MQTT_PORT;
+#else
+        G.mqtt.port = 1883;
+#endif
+
+#ifdef MQTT_USER
+        strlcpy(G.mqtt.user, MQTT_USER, sizeof(G.mqtt.user));
+#else
+        strcpy(G.mqtt.user, "User");
+#endif
+
+#ifdef MQTT_PASSWORD
+        strlcpy(G.mqtt.password, MQTT_PASSWORD, sizeof(G.mqtt.password));
+#else
+        strcpy(G.mqtt.password, "Password");
+#endif
+
+#ifdef MQTT_CLIENT_ID
+        strlcpy(G.mqtt.clientId, MQTT_CLIENT_ID, sizeof(G.mqtt.clientId));
+#else
+        strcpy(G.mqtt.clientId, "ClientId");
+#endif
+
+#ifdef MQTT_TOPIC
+        strlcpy(G.mqtt.topic, MQTT_TOPIC, sizeof(G.mqtt.topic));
+#else
+        strcpy(G.mqtt.topic, "ESPWordclock");
+#endif
+
+        G.clockTypeDef = DEFAULT_LAYOUT;
+        usedClockType = clockWork.getPointer(G.clockTypeDef);
+        clockWork.checkForValidLanguageVariant();
+        G.buildTypeDef = DEFAULT_BUILDTYPE;
+        G.Colortype = DEFAULT_LEDTYPE;
+        G.wType = WHITE_LEDTYPE;
+
+        G.bootLedBlink = false;
+        G.bootLedSweep = BOOT_LEDSWEEP;
+        G.bootShowWifi = true;
+        G.bootShowIP = BOOT_SHOWIP;
+
+        G.autoBrightEnabled = 0;
+        G.autoBrightMin = 10;
+        G.autoBrightMax = 80;
+        G.autoBrightPeak = 750;
+        G.transitionType = 0; // Transition::NO_TRANSITION;
+        G.transitionDuration = 2;
+        G.colorize = 0;
+        G.transitionDemo = false;
+
+        for (uint8_t i = 0; i < MAX_BIRTHDAY_COUNT; i++) {
+            G.birthday[i].day = 0;
+            G.birthday[i].month = 0;
+        }
+        setDefaultHardwarePins();
+        i2cBus::setDefaultPins(G.i2cSdaPin, G.i2cSclPin);
+
+        eeprom::write();
+        Serial.println("EEPROM written");
+    }
+
+    ensureWeatherData();
+#ifdef ESP8266
+    /* A watchdog reset or a crash right before this boot is most likely the
+     * weather request. Keep the rows dark for exactly one boot so the clock
+     * itself always comes up; the next reset tries again. */
+    {
+        const String resetReason = ESP.getResetReason();
+        if (resetReason.indexOf("atchdog") >= 0 ||
+            resetReason.indexOf("xception") >= 0) {
+            Serial.printf("Weather: disabled for this boot, the last reset was "
+                          "a %s\n",
+                          resetReason.c_str());
+            weather.skipUntilNextBoot();
+        }
+    }
+#endif
+
+    // Initialization of COMMAND_MODE_xxx (color)
+    G.progInit = true;
+
+    //-------------------------------------
+    // Get Pointer for ClockType
+    //-------------------------------------
+
+    if (!isValidModeCommand(G.prog)) {
+        Serial.printf("Invalid Programm %u in EEPROM, using word clock\n",
+                      G.prog);
+        G.prog = COMMAND_MODE_WORD_CLOCK;
+        eeprom::write();
+    }
+
+    if (!isValidClockTypeDef(G.clockTypeDef)) {
+        Serial.printf("Invalid ClockType %u in EEPROM, using default %u\n",
+                      G.clockTypeDef, DEFAULT_LAYOUT);
+        G.clockTypeDef = DEFAULT_LAYOUT;
+        eeprom::write();
+    }
+
+    usedClockType = clockWork.getPointer(G.clockTypeDef);
+    clockWork.normalizeMinuteVariant();
+
+    // Area that will be animated:
+    //         LED frame horizontal
+    //         LED frame vertical
+    //         Number of rows (including frames)
+    //         Number of columns (including frames)
+    // TODO: Get frame width from usedClockType.
+    renderPipeline.resize(usedClockType->rowsWordMatrix(),
+                          usedClockType->colsWordMatrix());
+
+    if (usedClockType->numPixelsFrameMatrix() != 0) {
+        secondsFrame = new SecondsFrame(usedClockType->numPixelsFrameMatrix());
+    } else {
+        secondsFrame = nullptr;
+    }
+
+    //-------------------------------------
+    // Initialize LEDs
+    //-------------------------------------
+
+    clockWork.initHardwareButtons();
+
+    Serial.println("LED Init");
+    clockWork.initLedStrip(G.Colortype);
+    if (G.bootLedBlink) {
+        clockWork.initBootLedBlink();
+        delay(20);
+    }
+    if (G.bootLedSweep) {
+        clockWork.initBootLedSweep(20);
+    }
+    clockWork.initBootLed();
+
+    G.conf = COMMAND_IDLE;
+
+    //-------------------------------------
+    // Initialize I2C
+    //-------------------------------------
+
+    i2cBus::begin(G.i2cSdaPin, G.i2cSclPin);
+
+    //-------------------------------------
+    // Start external real-time clock
+    //-------------------------------------
+
+    if (i2cBus::pinsAreEnabled(G.i2cSdaPin, G.i2cSclPin) && RTC.begin()) {
+        Serial.println("External real-time clock found");
+        struct timeval tv;
+        tv.tv_sec = RTC.now().unixtime();
+        settimeofday(&tv, nullptr);
+        network.rtcMode();
+        externalRTC = true;
+    } else {
+        Serial.println("No external real-time clock found");
+        externalRTC = false;
+    }
+#ifdef ESP8266
+    settimeofday_cb(time_is_set);
+#elif defined(ESP32)
+    sntp_set_time_sync_notification_cb(time_is_set);
+#endif
+
+    //-------------------------------------
+    // Start WiFi
+    //-------------------------------------
+
+    if (G.bootShowWifi) {
+        led.setBitmapSymbol(WLAN100, HsbColor(0.66f, 1.0f, 0.2f));
+    }
+    network.setup(G.hostname);
+#if WIFI_VERBOSE
+    int strength = network.getQuality();
+    Serial.printf("Signal strength: %i\n", strength);
+#endif
+    wifiStart();
+    ensureTimezone();
+    configTzTime(G.timezone, G.timeserver);
+
+    delay(50);
+
+    //-------------------------------------
+    // OTA
+    //-------------------------------------
+
+#if WEB_PROTECTED
+    httpUpdater.setup(&httpServer, WEB_USER, WEB_PASSWORD);
+#else
+    httpUpdater.setup(&httpServer);
+#endif
+    httpServer.onNotFound([]() {
+        // redirect port 81 not found pages to port 80
+        httpServer.sendHeader(
+            "Location", "http://" + WiFi.localIP().toString() + "/", true);
+        httpServer.send(308, "text/plain", "");
+    });
+    httpServer.begin();
+
+    //-------------------------------------
+    // MQTT
+    //-------------------------------------
+
+    if (G.mqtt.state) {
+        mqtt.init();
+    }
+
+    //-------------------------------------
+    // Start Websocket
+    //-------------------------------------
+
+#if WEB_PROTECTED
+    webSocket.setAuthorization(WEB_USER, WEB_PASSWORD);
+#endif
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
+
+    Serial.println("Websocket started");
+
+    //-------------------------------------
+    // mDNS
+    //-------------------------------------
+    MDNS.begin(G.hostname);
+    MDNS.addService("http", "tcp", 80);
+    MDNS.addService("ota", "tcp", 81);
+
+    //-------------------------------------
+    Serial.println("--------------------------------------");
+    Serial.println("ESP Wordclock");
+    Serial.printf("Version         : %s\n", VERSION);
+
+#ifdef ESP8266
+    Serial.printf("Chip ID         : %08X\n", ESP.getChipId());
+    Serial.printf("CPU Speed       : %u MHz \n\n", ESP.getCpuFreqMHz());
+#elif defined(ESP32)
+    Serial.printf("Chip ID         : %08X\n", (uint32_t)ESP.getEfuseMac());
+    Serial.printf("CPU Speed       : %u MHz \n\n", getCpuFrequencyMhz());
+#endif
+
+    Serial.printf("Flash Size : %u KByte\n", ESP.getFlashChipSize() / 1024);
+    Serial.printf("Flash ide Speed : %u\n\n", ESP.getFlashChipSpeed());
+
+    Serial.printf("Free Heap Size  : %u Byte\n", ESP.getFreeHeap());
+    Serial.printf("Sketch Size     : %u Byte \n", ESP.getSketchSize());
+    Serial.printf("Free Sketch Size: %u Byte \n\n", ESP.getFreeSketchSpace());
+
+    Serial.printf("SDK Version     : %s\n", ESP.getSdkVersion());
+    Serial.print("COMPILED        : ");
+    Serial.print(__DATE__);
+    Serial.print(" ");
+    Serial.println(__TIME__);
+
+    //-------------------------------------
+    // Auto brightness
+    //-------------------------------------
+
+#if defined(ESP32)
+    analogReadResolution(10);
+#endif
+
+    // Find BH1750 and initialize if available else fallback to LDR if available
+    byte bh1750Address = i2cBus::findBH1750Address(G.i2cSdaPin, G.i2cSclPin);
+
+    if (bh1750Address != 0) {
+        lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, bh1750Address);
+        Serial.println("BH1750 initialized");
+        bh1750Initialized = true;
+        autoBrightUsingBH1750 = true;
+    } else {
+        Serial.println("BH1750 initialisation error, using LDR if available");
+        bh1750Initialized = false;
+        autoBrightUsingBH1750 = false;
+    }
+
+    //-------------------------------------
+
+    Serial.println("--------------------------------------");
+    Serial.println("End Setup");
+#ifdef ESP8266
+    Serial.printf("[boot] setup done, heap %u, weather %s\n",
+                  static_cast<unsigned>(ESP.getFreeHeap()),
+                  G.qweatherHost[0] != '\0' ? "configured" : "not configured");
+#endif
+    Serial.println("--------------------------------------");
+    Serial.println("");
+
+    //-------------------------------------
+    // Reset Powercycle Counter
+    //-------------------------------------
+    delay(500);
+    powerCycleCount = 0;
+    EEPROM.write(POWER_CYCLE_COUNT_ADDRESS, powerCycleCount);
+    EEPROM.commit();
+
+    //-------------------------------------
+    // Frame Init
+    //-------------------------------------
+    if (secondsFrame) {
+        secondsFrame->initFrame();
+    }
+
+    //-------------------------------------
+    // Setup Done
+    //-------------------------------------
+    parametersChanged = true;
+}
+
+//------------------------------------------------------------------------------
+// Start loop()
+//------------------------------------------------------------------------------
+
+void loop() {
+
+    //------------------------------------------------
+    // Time
+    //------------------------------------------------
+    time_t utc = time(nullptr);
+    struct tm tm;
+    localtime_r(&utc, &tm);
+    if (utc > 100000000) {
+        _second = tm.tm_sec;
+        _minute = tm.tm_min;
+        _hour = tm.tm_hour;
+        _weekday = tm.tm_wday;
+    }
+
+    //------------------------------------------------
+    // Network
+    //------------------------------------------------
+    network.loop();
+#ifdef ESP8266
+    MDNS.update();
+#endif
+    httpServer.handleClient();
+
+    //------------------------------------------------
+    // Websocket
+    //------------------------------------------------
+    webSocket.loop();
+
+    //------------------------------------------------
+    // MQTT
+    //------------------------------------------------
+    if (G.mqtt.state && WiFi.status() == WL_CONNECTED) {
+        mqtt.loop();
+    }
+
+    //------------------------------------------------
+    // Frame
+    //------------------------------------------------
+    if (secondsFrame) {
+        secondsFrame->loop();
+    }
+
+    //------------------------------------------------
+    // Render Pipeline
+    //------------------------------------------------
+    renderPipeline.loop(tm); // must be called periodically
+
+    //------------------------------------------------
+    // Clockwork
+    //------------------------------------------------
+    clockWork.loop(tm);
+}

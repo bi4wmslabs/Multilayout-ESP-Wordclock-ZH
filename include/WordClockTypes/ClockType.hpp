@@ -1,0 +1,336 @@
+#pragma once
+
+#include <initializer_list>
+#include <string.h> // memset (resetWordIds)
+
+#include "FrontWord.h"
+
+enum class LanguageAbbreviation {
+    DE,
+    EN,
+    ES,
+    IT,
+    NL,
+    HU,
+    RO,
+    FR,
+    SE,
+    RU,
+    BN,
+    TR,
+    ZH
+};
+
+class ClockType {
+public:
+    virtual void setFrontMatrixWord(const uint8_t row, const uint8_t colStart,
+                                    const uint8_t colEnd) {
+        for (uint8_t i = colStart; i <= colEnd; i++) {
+            setFrontMatrixPixel(row, i);
+        }
+    }
+
+    virtual void setFrontMatrixPixel(const int row, const int col,
+                                     bool state = true) {
+        // Guard against out of range indices: a negative column would shift by
+        // a negative amount (undefined behaviour) and a row beyond the matrix
+        // would write past frontMatrix[].
+        const uint8_t cols = colsWordMatrix();
+        if (row < 0 || row >= static_cast<int>(rowsWordMatrix()) || col < 0 ||
+            col >= static_cast<int>(cols)) {
+            return;
+        }
+
+        if (state) {
+            frontMatrix[row] |= 1UL << col;
+        } else {
+            frontMatrix[row] &= ~(1UL << col);
+        }
+
+        // Record the word this cell belongs to. col is a bit position, while
+        // frontWordId is indexed like getFrontMatrixPixel() - hence the flip.
+        if (cols <= MAX_COL_SIZE) {
+            frontWordId[row][cols - 1 - col] =
+                state ? currentWordId : WORD_ID_NONE;
+        }
+    }
+
+    virtual bool getFrontMatrixPixel(const uint8_t row, const uint8_t col) {
+        if (row >= rowsWordMatrix() || col >= colsWordMatrix()) {
+            return false;
+        }
+
+        return (frontMatrix[row] >> (colsWordMatrix() - 1 - col)) & 1U;
+    }
+
+    /*
+     * Public entry point for drawing a word. Not virtual: it records which
+     * word is being drawn so setFrontMatrixPixel() can tag every cell it
+     * touches, then delegates to the layout's drawWord().
+     *
+     * The previous id is saved and restored rather than cleared, because
+     * layouts call show() recursively (e.g. Ger13x13 composes "zwei und" from
+     * show(min_2) followed by more drawing of its own).
+     */
+    void show(FrontWord word) {
+        const uint8_t previousWordId = currentWordId;
+        currentWordId = static_cast<uint8_t>(word);
+        drawWord(word);
+        currentWordId = previousWordId;
+    }
+
+    /* Clear the word tags; call whenever frontMatrix itself is reset. */
+    static void resetWordIds() {
+        memset(frontWordId, WORD_ID_NONE, sizeof(frontWordId));
+    }
+
+    virtual void drawWord(FrontWord word) = 0;
+
+    virtual LanguageAbbreviation usedLang() = 0;
+
+    virtual bool supportsSecondsFrame() { return true; }
+
+    virtual inline uint8_t numPixelsFrameMatrix() {
+        return supportsSecondsFrame() ? G.secondsFrameLedCount : 0;
+    }
+
+    virtual inline uint8_t rowsWordMatrix() { return 10; }
+
+    virtual inline uint8_t colsWordMatrix() { return 11; }
+
+    virtual uint8_t numPixelsMinuteMatrix() {
+        if (!hasMinuteLeds()) {
+            return 0;
+        }
+
+        return G.minuteLedCount == MINUTE_LEDS_WIRED_7 ? MINUTE_LEDS_WIRED_7
+                                                       : MINUTE_LEDS_WIRED_4;
+    }
+
+    virtual uint16_t getFrameMatrixIndex(uint16_t index) {
+        return numPixelsWordMatrixAdjusted() + numPixelsMinuteMatrix() + index;
+    }
+
+    uint16_t numPixelsOnStrip() {
+        const uint8_t ledsPerLetter = getLedsPerLetter(G.buildTypeDef);
+        uint16_t pixelCount = 0;
+
+        for (uint8_t row = 0; row < rowsWordMatrix(); row++) {
+            for (uint8_t col = 0; col < colsWordMatrix(); col++) {
+                const uint16_t behindLetter =
+                    (getFrontMatrixIndex(row, col) + 1) * ledsPerLetter;
+                if (behindLetter > pixelCount) {
+                    pixelCount = behindLetter;
+                }
+            }
+        }
+
+        if (hasMinuteLeds()) {
+            for (MinuteVariant variant :
+                 {MinuteVariant::LED4x, MinuteVariant::LED7x}) {
+                uint16_t minutePixels[MINUTE_LEDS_WIRED_4] = {0};
+                getMinuteArray(minutePixels, variant);
+                for (uint8_t i = 0; i < MINUTE_LEDS_WIRED_4; i++) {
+                    if (minutePixels[i] + 1 > pixelCount) {
+                        pixelCount = minutePixels[i] + 1;
+                    }
+                }
+            }
+        }
+
+        if (numPixelsFrameMatrix() > 0) {
+            const uint16_t behindFrame =
+                getFrameMatrixIndex(numPixelsFrameMatrix() - 1) + 1;
+            if (behindFrame > pixelCount) {
+                pixelCount = behindFrame;
+            }
+        }
+
+        return pixelCount;
+    }
+
+    // --- Language & General Properties ---
+
+    virtual bool isRomanLanguage() { return false; }
+
+    // --- Time-Specific Words ---
+
+    virtual bool hasDreiviertel() { return false; }
+
+    //--- Chinese time format ---------------------------------------------
+    /*
+     * ZH10x11 renders its face as 现在是 + 时段 + 时 点 分/整 + 星期X. Such a
+     * layout must not run through the German vor/nach/halb minute logic, so
+     * ClockWork::setClock() branches into setChineseClock() instead.
+     */
+    virtual bool usesChineseTimeFormat() { return false; }
+
+    virtual bool hasTwenty() { return true; }
+
+    virtual bool hasTwentyfive() { return false; }
+
+    virtual bool hasThirtyfive() { return false; }
+
+    virtual bool hasForty() { return false; }
+
+    virtual bool hasFifty() { return false; }
+
+    virtual bool hasFiftyFive() { return false; }
+
+    virtual bool hasMitternacht() { return false; }
+
+    // --- Layout & Mode Capabilities ---
+
+    virtual bool has24HourLayout() { return false; }
+
+    virtual bool has60MinuteLayout() { return false; }
+
+    virtual bool hasOnlyQuarterLayout() { return false; }
+
+    virtual bool hasWeatherLayout() { return false; }
+
+    /* Layout wants weather data fetched (OpenWeatherMap client running) but
+     * draws it itself, without the full Ger22x11Weather clockface takeover. */
+    virtual bool hasWeatherData() { return false; }
+
+    virtual bool hasSecondsFrame() {
+        return supportsSecondsFrame() && G.secondsFrameLedCount > 0;
+    }
+
+    virtual bool hasDaytimeWords() { return false; }
+
+    // --- Minute Display Capabilities ---
+
+    virtual bool hasLed4x() { return true; }
+
+    virtual bool hasLed7x() { return hasLed4x(); }
+
+    virtual bool hasMinuteLeds() { return hasLed4x() || hasLed7x(); }
+
+    virtual bool hasMinuteInWords() { return false; }
+
+    virtual bool supportsMinuteVariant(MinuteVariant variant) {
+        switch (variant) {
+        case MinuteVariant::Off:
+            return true;
+        case MinuteVariant::LED4x:
+            return hasLed4x();
+        case MinuteVariant::LED7x:
+            return hasLed7x();
+        case MinuteVariant::InWords:
+            return hasMinuteInWords();
+        default:
+            return false;
+        }
+    }
+
+    virtual uint8_t supportedMinuteVariantMask() {
+        uint8_t mask = 0;
+        for (uint8_t i = 0; i <= static_cast<uint8_t>(MinuteVariant::InWords);
+             i++) {
+            const MinuteVariant variant = static_cast<MinuteVariant>(i);
+            if (supportsMinuteVariant(variant)) {
+                mask |= 1U << i;
+            }
+        }
+        return mask;
+    }
+
+    // --- Special Words ---
+
+    virtual bool hasSpecialWordBeen() { return false; }
+
+    virtual bool hasSpecialWordHappyBirthday() { return false; }
+
+    // --- General ---
+
+    virtual uint16_t getFrontMatrixIndex(uint8_t row, uint8_t col) {
+
+        uint16_t returnValue;
+        uint8_t newColsWordMatrix = colsWordMatrix();
+        uint16_t numPixelsWordMatrix = rowsWordMatrix() * colsWordMatrix();
+
+        if (G.buildTypeDef == BuildTypeDef::DoubleResM1) {
+            newColsWordMatrix = 2 * colsWordMatrix() - 1;
+            numPixelsWordMatrix = rowsWordMatrix() * newColsWordMatrix;
+            col *= 2;
+        }
+
+        if (G.layoutVariant[FlipHorzVert] == false) {
+            if (G.layoutVariant[MeanderRows] && (row % 2 != 0)) {
+                col = newColsWordMatrix - col - 1;
+            }
+            returnValue = col + (row * newColsWordMatrix);
+            if (G.layoutVariant[ExtraLedPerRow]) {
+                returnValue += row;
+                numPixelsWordMatrix += rowsWordMatrix() - 1;
+            }
+        } else {
+            if (G.layoutVariant[MeanderRows] && (col % 2 == 0)) {
+                row = rowsWordMatrix() - 1 - row;
+            }
+            returnValue =
+                row + rowsWordMatrix() * (newColsWordMatrix - 1 - col);
+            if (G.layoutVariant[ExtraLedPerRow]) {
+                returnValue += newColsWordMatrix - 1 - col;
+                numPixelsWordMatrix += newColsWordMatrix - 1;
+            }
+        }
+
+        return checkedFrontMatrixIndex(returnValue, numPixelsWordMatrix);
+    };
+
+    virtual void getMinuteArray(uint16_t *returnArr, MinuteVariant variant) {
+        const uint16_t numPixelsWordMatrix = numPixelsWordMatrixAdjusted();
+        const uint8_t spacing = variant == MinuteVariant::LED7x ? 2 : 1;
+
+        for (uint8_t i = 0; i < 4; i++) {
+            returnArr[i] = numPixelsWordMatrix + i * spacing;
+        }
+    };
+
+protected:
+    uint8_t currentWordId = WORD_ID_NONE;
+
+    /*
+     * Physical LED count consumed by the word matrix on the strip - i.e. the
+     * raw index where the next section (minutes, then the seconds frame)
+     * begins. getFrontMatrixIndex() returns a *logical* cell index which
+     * Led::setPixel(row, col, ...) fans out to getLedsPerLetter() physical
+     * LEDs per cell; the minute and frame LEDs are addressed as raw physical
+     * indices directly (no fan-out), so this needs the physical count, not
+     * the logical cell count.
+     */
+    uint16_t numPixelsWordMatrixAdjusted() {
+        uint16_t numPixelsWordMatrix = rowsWordMatrix() * colsWordMatrix();
+
+        if (G.buildTypeDef == BuildTypeDef::DoubleResM1) {
+            numPixelsWordMatrix = rowsWordMatrix() * (colsWordMatrix() * 2 - 1);
+        }
+        if (G.layoutVariant[ExtraLedPerRow]) {
+            if (G.layoutVariant[FlipHorzVert] == false) {
+                numPixelsWordMatrix += rowsWordMatrix() - 1;
+            } else if (G.buildTypeDef == BuildTypeDef::DoubleResM1) {
+                numPixelsWordMatrix += colsWordMatrix() * 2 - 2;
+            } else {
+                numPixelsWordMatrix += colsWordMatrix() - 1;
+            }
+        }
+
+        return numPixelsWordMatrix * getLedsPerLetter(G.buildTypeDef);
+    }
+
+    uint16_t checkedFrontMatrixIndex(const uint16_t index,
+                                     const uint16_t numPixels) {
+        static bool alreadyReported = false;
+
+        if (index >= numPixels && !alreadyReported) {
+            alreadyReported = true;
+            Serial.printf("[ERROR] getFrontMatrixIndex(): index %u exceeds "
+                          "%u pixels\n",
+                          index, numPixels);
+        }
+
+        return index;
+    }
+};
