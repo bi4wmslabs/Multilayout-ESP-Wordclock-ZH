@@ -20,6 +20,8 @@
 > - Development & debugging notes: [docs/blog/](docs/blog/) (bilingual series)
 >
 > Upstream documentation, installation and flashing instructions below. Demo GIFs and build photos are not distributed here — they link to the upstream repository.
+>
+> **About the hardware**: this repository open-sources the firmware only (BSD-3-Clause). Hardware design files — silkscreen SVGs, 3D models, laser-cutting templates and schematics — are not published here; the upstream repo's own design files remain available upstream.
 
 <img src="https://raw.githubusercontent.com/ESPWortuhr/Multilayout-ESP-Wordclock/main/pics/wortuhr-webpage.png" alt="Web interface on desktop" height="420"/> <img src="https://raw.githubusercontent.com/ESPWortuhr/Multilayout-ESP-Wordclock/main/pics/wortuhr-webpage-mobile.png" alt="Web interface on a phone" height="420"/>
 
@@ -277,7 +279,8 @@ While the portal is open the display does not update. Color and time appear once
 ---
 
 ## Wiring the hardware
-![](pics/Schematic.png)
+
+Schematics and hardware design files are not included in this repository; schematics are available in the [upstream repository](https://github.com/ESPWortuhr/Multilayout-ESP-Wordclock).
 
 ## Mechanical structure of a word clock
 

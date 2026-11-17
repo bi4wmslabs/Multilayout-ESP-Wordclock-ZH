@@ -20,6 +20,8 @@
 > - 开发与调试过程记录见 [docs/blog/](docs/blog/)（中英双语系列）
 >
 > 上游的功能说明、安装与刷机文档见下文；演示动图与实物照片未随本仓库分发，引用自上游仓库，请到上游查看。
+>
+> **关于硬件**：本仓库只开源固件（BSD-3-Clause）。丝印 SVG、3D 模型、激光切割模板与电路图等硬件设计文件不随仓库发布；上游仓库的对应设计文件仍可在上游获取。
 
 <img src="https://raw.githubusercontent.com/ESPWortuhr/Multilayout-ESP-Wordclock/main/pics/wortuhr-webpage.png" alt="Weboberfläche am Desktop" height="420"/> <img src="https://raw.githubusercontent.com/ESPWortuhr/Multilayout-ESP-Wordclock/main/pics/wortuhr-webpage-mobile.png" alt="Weboberfläche am Smartphone" height="420"/>
 
@@ -279,7 +281,8 @@ Solange der Dialog offen ist, steht die Anzeige. Farbe und Uhrzeit erscheinen er
 ---
 
 ## Anschluss der Hardware
-![](pics/Schematic.png)
+
+Die Schaltpläne und Hardware-Designdateien sind in diesem Repository nicht enthalten; die Schaltpläne finden Sie im [Upstream-Repository](https://github.com/ESPWortuhr/Multilayout-ESP-Wordclock).
 
 ## Schematischer Aufbau einer Wordclock
 
