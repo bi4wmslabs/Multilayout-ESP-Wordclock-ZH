@@ -17,7 +17,6 @@
 > - **ZH10x11 Chinese layout**: 110 front LEDs reading in whole Chinese phrases, plus weekday, weather and temperature rows accurate to 1 °C (see [docs/ZH10x11.md](docs/ZH10x11.md))
 > - **Dual weather sources**: keyless [Open-Meteo](https://open-meteo.com) by default (just type a city in the web UI), QWeather kept as an option (HTTPS + gzip)
 > - **Chinese web UI**: a complete `zh` language pack, auto-matched for `zh-CN` browsers
-> - Development & debugging notes: [docs/blog/](docs/blog/) (bilingual series)
 >
 > Upstream documentation, installation and flashing instructions below. Demo GIFs and build photos are not distributed here — they link to the upstream repository.
 >
